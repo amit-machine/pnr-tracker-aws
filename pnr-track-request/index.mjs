@@ -79,6 +79,13 @@ export const handler = async (event) => {
     const pnrResult = await checkPNRStatus(normalizedPnr);
 
     if (!pnrResult?.success) {
+      if (isPnrInvalid(pnrResult?.error)) {
+        return response(400, {
+          success: false,
+          message: "This PNR could not be found. Please check the PNR number.",
+        });
+      }
+
       return response(502, {
         success: false,
         message: "Unable to fetch PNR status",
@@ -262,6 +269,17 @@ async function createNotificationSubscription(trackingId, email) {
     subscriptionArn:
       subscriptionResult.SubscriptionArn || "PendingConfirmation",
   };
+}
+
+// --------------------------------------------------
+// Check whether Railkit reported this PNR as permanently
+// gone, as opposed to a temporary lookup failure
+// --------------------------------------------------
+
+function isPnrInvalid(errorText) {
+  const error = String(errorText || "").toLowerCase();
+
+  return error.includes("no pnr data found") || error.includes("invalid pnr");
 }
 
 // --------------------------------------------------
