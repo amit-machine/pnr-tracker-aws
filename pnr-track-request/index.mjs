@@ -1,17 +1,18 @@
-import { configure, checkPNRStatus } from "railkit";
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
-import { DynamoDBDocumentClient, PutCommand } from "@aws-sdk/lib-dynamodb";
 import {
   CreateTopicCommand,
   SNSClient,
   SubscribeCommand,
 } from "@aws-sdk/client-sns";
+import { DynamoDBDocumentClient, PutCommand } from "@aws-sdk/lib-dynamodb";
 import { randomUUID } from "crypto";
+import { checkPNRStatus, configure } from "railkit";
 
 configure(process.env.RAILKIT_API_KEY);
 
 const dynamoClient = new DynamoDBClient({});
 const dynamo = DynamoDBDocumentClient.from(dynamoClient);
+
 const sns = new SNSClient({
   region: process.env.AWS_REGION || "ap-south-1",
 });
@@ -25,7 +26,10 @@ export const handler = async (event) => {
 
     const { pnr, email } = body;
 
+    // --------------------------------------------------
     // Validate PNR
+    // --------------------------------------------------
+
     if (!pnr || !/^\d{10}$/.test(String(pnr))) {
       return response(400, {
         success: false,
@@ -33,7 +37,10 @@ export const handler = async (event) => {
       });
     }
 
+    // --------------------------------------------------
     // Validate email
+    // --------------------------------------------------
+
     if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       return response(400, {
         success: false,
@@ -41,8 +48,14 @@ export const handler = async (event) => {
       });
     }
 
-    // Check the current PNR status immediately
-    const pnrResult = await checkPNRStatus(String(pnr));
+    const normalizedEmail = email.toLowerCase().trim();
+    const normalizedPnr = String(pnr);
+
+    // --------------------------------------------------
+    // Check current PNR status
+    // --------------------------------------------------
+
+    const pnrResult = await checkPNRStatus(normalizedPnr);
 
     if (!pnrResult?.success) {
       return response(502, {
@@ -53,9 +66,41 @@ export const handler = async (event) => {
 
     const data = pnrResult.data;
 
-    // Store only the information needed for future comparisons
+    // --------------------------------------------------
+    // Determine whether tracking is allowed
+    // --------------------------------------------------
+
+    const chartStatus = data.chart?.status || null;
+
+    const chartPrepared = chartStatus === "Chart Prepared";
+
+    const journeyDate = convertJourneyDateToIST(data.journey?.dateOfJourney);
+
+    const journeyPassed = isJourneyPassed(journeyDate);
+
+    if (chartPrepared) {
+      return response(400, {
+        success: false,
+        message:
+          "PNR tracking is not available because the railway chart has already been prepared.",
+      });
+    }
+
+    if (journeyPassed) {
+      return response(400, {
+        success: false,
+        message:
+          "PNR tracking is not available because the journey has already started or passed.",
+      });
+    }
+
+    // --------------------------------------------------
+    // Store only the information needed for future
+    // status comparisons
+    // --------------------------------------------------
+
     const lastStatus = {
-      chart: data.chart?.status || null,
+      chart: chartStatus,
 
       passengers: (data.passengers || []).map((passenger) => ({
         serialNumber: passenger.serialNumber,
@@ -69,29 +114,25 @@ export const handler = async (event) => {
     const trackingId = randomUUID();
     const now = new Date().toISOString();
 
-    // Each tracking request gets its own topic. This keeps notifications
-    // private: a subscriber only receives updates for this tracking ID.
-    // SNS sends the recipient a confirmation email before any updates are
-    // delivered, so SES production access is not required.
+    // --------------------------------------------------
+    // Create private SNS notification subscription
+    // --------------------------------------------------
+
     const notification = await createNotificationSubscription(
       trackingId,
-      email.toLowerCase().trim(),
+      normalizedEmail,
     );
 
-    // Railkit returns journey date/time as something like:
-    // "Sep 2, 2026 3:30:00 PM"
-    //
-    // Convert it to an explicit IST timestamp so that
-    // the scheduled tracking Lambda can reliably determine
-    // when the journey has passed.
-    const journeyDate = convertJourneyDateToIST(data.journey?.dateOfJourney);
+    // --------------------------------------------------
+    // Create DynamoDB tracking record
+    // --------------------------------------------------
 
     const item = {
       trackingId,
 
-      pnr: String(pnr),
+      pnr: normalizedPnr,
 
-      email: email.toLowerCase().trim(),
+      email: normalizedEmail,
 
       active: true,
       verified: false,
@@ -123,8 +164,8 @@ export const handler = async (event) => {
       message:
         "PNR tracking created. Please confirm the Amazon SNS subscription email before status alerts can be delivered.",
       trackingId,
-      pnr: String(pnr),
-      email: email.toLowerCase().trim(),
+      pnr: normalizedPnr,
+      email: normalizedEmail,
       currentStatus: lastStatus,
     });
   } catch (error) {
@@ -136,6 +177,10 @@ export const handler = async (event) => {
     });
   }
 };
+
+// --------------------------------------------------
+// Create SNS topic + email subscription
+// --------------------------------------------------
 
 async function createNotificationSubscription(trackingId, email) {
   const topicResult = await sns.send(
@@ -159,8 +204,31 @@ async function createNotificationSubscription(trackingId, email) {
 
   return {
     topicArn: topicResult.TopicArn,
-    subscriptionArn: subscriptionResult.SubscriptionArn || "PendingConfirmation",
+    subscriptionArn:
+      subscriptionResult.SubscriptionArn || "PendingConfirmation",
   };
+}
+
+// --------------------------------------------------
+// Check whether journey has already passed
+// --------------------------------------------------
+
+function isJourneyPassed(journeyDate) {
+  if (!journeyDate) {
+    return false;
+  }
+
+  const journeyTimestamp = new Date(journeyDate);
+
+  if (Number.isNaN(journeyTimestamp.getTime())) {
+    console.warn(
+      `Unable to determine whether journey has passed: ${journeyDate}`,
+    );
+
+    return false;
+  }
+
+  return journeyTimestamp.getTime() <= Date.now();
 }
 
 // --------------------------------------------------
@@ -245,8 +313,6 @@ function convertJourneyDateToIST(journeyDate) {
    *
    * and is stored as:
    * 2026-09-02T10:00:00.000Z
-   *
-   * Both represent the same instant.
    */
 
   const utcMilliseconds =
@@ -262,6 +328,10 @@ function convertJourneyDateToIST(journeyDate) {
 
   return new Date(utcMilliseconds).toISOString();
 }
+
+// --------------------------------------------------
+// API response helper
+// --------------------------------------------------
 
 function response(statusCode, body) {
   return {
