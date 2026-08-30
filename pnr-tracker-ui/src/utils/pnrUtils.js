@@ -3,10 +3,7 @@ export function canTrackPnr(status) {
     return false;
   }
 
-  const chartPrepared =
-    status.chart?.status?.toLowerCase() === "chart prepared";
-
-  if (chartPrepared) {
+  if (isChartPrepared(status.chart?.status)) {
     return false;
   }
 
@@ -17,6 +14,46 @@ export function canTrackPnr(status) {
   }
 
   return journeyDate > new Date();
+}
+
+// --------------------------------------------------
+// Check whether the railway chart has been prepared
+// --------------------------------------------------
+
+export function isChartPrepared(chartStatus) {
+  const chart = String(chartStatus || "").toLowerCase();
+
+  if (!chart) {
+    return false;
+  }
+
+  return chart.includes("prepared") && !chart.includes("not prepared");
+}
+
+// --------------------------------------------------
+// Human-readable passenger status label
+// --------------------------------------------------
+
+export function statusLabel(status) {
+  const value = String(status || "Not available").toUpperCase();
+
+  if (value.startsWith("CNF") || value === "CONFIRMED") {
+    return "Confirmed";
+  }
+
+  if (value.startsWith("WL")) {
+    return "Waiting List";
+  }
+
+  if (value.startsWith("RAC")) {
+    return "RAC";
+  }
+
+  if (value.startsWith("CAN") || value === "CANCELLED") {
+    return "Cancelled";
+  }
+
+  return status || "Not available";
 }
 
 function parseRailkitDate(value) {
