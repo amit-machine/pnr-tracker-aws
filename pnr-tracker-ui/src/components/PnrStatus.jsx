@@ -9,35 +9,41 @@ function PnrStatus({ status }) {
           <h2>{status.pnr}</h2>
         </div>
 
-        <span className="status-badge">{status.chart.status}</span>
+        <span className="status-badge">
+          {status.chart?.status || "Not available"}
+        </span>
       </div>
 
       <div className="journey-card">
         <h3>
-          {status.train.number} - {status.train.name}
+          {status.train?.number || "Not available"} -{" "}
+          {status.train?.name || "Not available"}
         </h3>
 
         <p>
-          {status.journey.source.name} → {status.journey.destination.name}
+          {status.journey?.source?.name || "Not available"} →{" "}
+          {status.journey?.destination?.name || "Not available"}
         </p>
 
-        <span>{status.journey.dateOfJourney}</span>
+        <span>{status.journey?.dateOfJourney || "Not available"}</span>
       </div>
 
       <div className="journey-details">
         <div className="detail-card">
           <span>Class</span>
-          <strong>{status.journey.class}</strong>
+          <strong>{status.journey?.class || "Not available"}</strong>
         </div>
 
         <div className="detail-card">
           <span>Quota</span>
-          <strong>{status.journey.quota}</strong>
+          <strong>{status.journey?.quota || "Not available"}</strong>
         </div>
 
         <div className="detail-card">
           <span>Distance</span>
-          <strong>{status.journey.distance} km</strong>
+          <strong>
+            {status.journey?.distance ? `${status.journey.distance} km` : "Not available"}
+          </strong>
         </div>
       </div>
 
@@ -45,8 +51,11 @@ function PnrStatus({ status }) {
         <h3>Passengers</h3>
 
         <div className="passenger-list">
-          {status.passengers.map((passenger) => (
-            <PassengerCard key={passenger.serialNumber} passenger={passenger} />
+          {(status.passengers || []).map((passenger, index) => (
+            <PassengerCard
+              key={passenger.serialNumber || index}
+              passenger={passenger}
+            />
           ))}
         </div>
       </div>
