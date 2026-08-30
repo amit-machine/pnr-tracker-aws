@@ -31,6 +31,27 @@ export function isChartPrepared(chartStatus) {
 }
 
 // --------------------------------------------------
+// Human-readable reason tracking stopped
+// --------------------------------------------------
+
+export function stopReasonLabel(stopReason) {
+  switch (stopReason) {
+    case "CHART_PREPARED":
+      return "Chart prepared";
+    case "ALL_CONFIRMED":
+      return "All passengers confirmed";
+    case "ALL_CANCELLED":
+      return "All passengers cancelled";
+    case "JOURNEY_OVER":
+      return "Journey completed";
+    case "INVALID_PNR":
+      return "PNR no longer available";
+    default:
+      return null;
+  }
+}
+
+// --------------------------------------------------
 // Human-readable passenger status label
 // --------------------------------------------------
 
