@@ -1,15 +1,15 @@
-import { configure, checkPNRStatus } from "railkit";
+import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import {
   ListSubscriptionsByTopicCommand,
   PublishCommand,
   SNSClient,
 } from "@aws-sdk/client-sns";
-import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import {
   DynamoDBDocumentClient,
   ScanCommand,
   UpdateCommand,
 } from "@aws-sdk/lib-dynamodb";
+import { checkPNRStatus, configure } from "railkit";
 
 configure(process.env.RAILKIT_API_KEY);
 
@@ -31,9 +31,78 @@ async function buildStatusNotification(
   isFinal,
   finalReason,
 ) {
-  const subject = isFinal
-    ? `PNR Tracker - Final Update for ${record.pnr}`
-    : `PNR Tracker - Status Update for ${record.pnr}`;
+  // --------------------------------------------------
+  // Helpers
+  // --------------------------------------------------
+
+  const statusLabel = (status) => {
+    const value = String(status || "Not available").toUpperCase();
+
+    if (value.startsWith("CNF") || value === "CONFIRMED") {
+      return "Confirmed";
+    }
+
+    if (value.startsWith("WL")) {
+      return "Waiting List";
+    }
+
+    if (value.startsWith("RAC")) {
+      return "RAC";
+    }
+
+    if (value.startsWith("CAN") || value === "CANCELLED") {
+      return "Cancelled";
+    }
+
+    return status || "Not available";
+  };
+
+  const formatStatus = (passenger) => {
+    const label = statusLabel(passenger?.status);
+    const details = passenger?.details;
+
+    return details ? `${label} (${details})` : label;
+  };
+
+  const formatJourneyDate = (dateValue) => {
+    if (!dateValue) {
+      return "Not available";
+    }
+
+    const date = new Date(dateValue);
+
+    if (Number.isNaN(date.getTime())) {
+      return dateValue;
+    }
+
+    const parts = new Intl.DateTimeFormat("en-IN", {
+      timeZone: "Asia/Kolkata",
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    }).formatToParts(date);
+
+    const get = (type) => parts.find((part) => part.type === type)?.value || "";
+
+    return `${get("day")} ${get("month")} ${get("year")}, ${get(
+      "hour",
+    )}:${get("minute")} ${get("dayPeriod").toUpperCase()}`;
+  };
+
+  const formatValue = (value) => {
+    if (value === null || value === undefined || value === "") {
+      return "Not assigned";
+    }
+
+    return String(value);
+  };
+
+  // --------------------------------------------------
+  // Final status message
+  // --------------------------------------------------
 
   let finalMessage = "";
 
@@ -65,457 +134,157 @@ async function buildStatusNotification(
     }
   }
 
-  // Convert technical status codes into user-friendly labels
-  const statusLabel = (status) => {
-    const value = String(status || "Not available").toUpperCase();
-
-    if (value.startsWith("CNF") || value === "CONFIRMED") {
-      return "Confirmed";
-    }
-
-    if (value.startsWith("WL")) {
-      return "Waiting List";
-    }
-
-    if (value.startsWith("RAC")) {
-      return "RAC";
-    }
-
-    if (value.startsWith("CAN") || value === "CANCELLED") {
-      return "Cancelled";
-    }
-
-    return status || "Not available";
-  };
-
   // --------------------------------------------------
-  // Plain-text email
+  // Find exactly what changed
   // --------------------------------------------------
 
-  const passengerText = (latestStatus.passengers || [])
+  const changes = [];
+
+  // Chart status change
+  if (previousStatus?.chart !== latestStatus?.chart) {
+    changes.push(
+      `Chart\n${formatValue(previousStatus?.chart)} → ${formatValue(
+        latestStatus?.chart,
+      )}`,
+    );
+  }
+
+  // Passenger changes
+  const previousPassengers = previousStatus?.passengers || [];
+  const latestPassengers = latestStatus?.passengers || [];
+
+  const previousBySerial = new Map(
+    previousPassengers.map((passenger) => [passenger.serialNumber, passenger]),
+  );
+
+  const latestBySerial = new Map(
+    latestPassengers.map((passenger) => [passenger.serialNumber, passenger]),
+  );
+
+  // Check current passengers
+  for (const current of latestPassengers) {
+    const previous = previousBySerial.get(current.serialNumber);
+
+    // New passenger
+    if (!previous) {
+      changes.push(
+        `${current.serialNumber || "Passenger"}\nNew passenger information detected.`,
+      );
+
+      continue;
+    }
+
+    const passengerChanges = [];
+
+    // Status / WL / RAC / CNF change
+    if (
+      previous.status !== current.status ||
+      previous.details !== current.details
+    ) {
+      passengerChanges.push(
+        `${formatStatus(previous)} → ${formatStatus(current)}`,
+      );
+    }
+
+    // Coach change
+    if (previous.coach !== current.coach) {
+      passengerChanges.push(
+        `Coach: ${formatValue(previous.coach)} → ${formatValue(current.coach)}`,
+      );
+    }
+
+    // Berth change
+    if (previous.berthNo !== current.berthNo) {
+      passengerChanges.push(
+        `Berth: ${formatValue(previous.berthNo)} → ${formatValue(
+          current.berthNo,
+        )}`,
+      );
+    }
+
+    if (passengerChanges.length > 0) {
+      changes.push(
+        `${current.serialNumber || "Passenger"}\n${passengerChanges.join(
+          "\n",
+        )}`,
+      );
+    }
+  }
+
+  // Detect removed passengers
+  for (const previous of previousPassengers) {
+    if (!latestBySerial.has(previous.serialNumber)) {
+      changes.push(
+        `${previous.serialNumber || "Passenger"}\nPassenger information is no longer available.`,
+      );
+    }
+  }
+
+  const changesText =
+    changes.length > 0
+      ? changes.join("\n\n")
+      : "No specific field changes detected.";
+
+  // --------------------------------------------------
+  // Current passenger status
+  // --------------------------------------------------
+
+  const passengerText = latestPassengers
     .map((passenger) => {
-      return `
-${passenger.serialNumber || "Passenger"}
-Status: ${statusLabel(passenger.status)}${
-        passenger.details ? ` (${passenger.details})` : ""
-      }
-Coach: ${passenger.coach || "Not assigned"}
-Berth: ${passenger.berthNo || "Not assigned"}`;
+      return `${passenger.serialNumber || "Passenger"}
+Status: ${formatStatus(passenger)}
+Coach: ${formatValue(passenger.coach)}
+Berth: ${formatValue(passenger.berthNo)}`;
     })
-    .join("\n");
+    .join("\n\n");
+
+  // --------------------------------------------------
+  // Subject
+  // --------------------------------------------------
+
+  const subject = isFinal
+    ? `PNR Tracker - Final Update for ${record.pnr}`
+    : `PNR Tracker - Status Changed for ${record.pnr}`;
+
+  // --------------------------------------------------
+  // Plain-text SNS email
+  // --------------------------------------------------
 
   const textBody = `
 Hello,
 
-${
-  isFinal
-    ? "Here is the final update for your PNR."
-    : "There has been an update to your PNR status."
-}
+${isFinal
+      ? "There has been a final update to your PNR."
+      : "Your PNR status has changed."
+    }
 
 PNR: ${record.pnr}
-Train: ${record.trainName || "Not available"}
-Train Number: ${record.trainNumber || "Not available"}
-Journey Date: ${record.journeyDate || "Not available"}
+Train: ${record.trainNumber || "Not available"} - ${record.trainName || "Not available"
+    }
+Journey Date: ${formatJourneyDate(record.journeyDate)}
+
+WHAT CHANGED
+------------
+${changesText}
 
 CURRENT STATUS
+--------------
 Chart: ${latestStatus.chart || "Not available"}
 
 PASSENGERS
+----------
 ${passengerText || "No passenger information available."}
 
-${
-  isFinal
-    ? finalMessage
-    : "Your PNR tracker will continue checking for further status changes."
-}
+${isFinal
+      ? `FINAL UPDATE
+------------
+${finalMessage}`
+      : `TRACKING
+--------
+Your PNR tracker will continue checking for further status changes.`
+    }
 
 This is an automated notification from PNR Tracker.
-`;
-
-  // --------------------------------------------------
-  // Passenger HTML cards
-  // --------------------------------------------------
-
-  const passengerRows = (latestStatus.passengers || [])
-    .map(
-      (passenger) => `
-        <div style="
-          border: 1px solid #e5e7eb;
-          border-radius: 10px;
-          padding: 16px;
-          margin-bottom: 12px;
-          background: #ffffff;
-        ">
-
-          <div style="
-            font-size: 16px;
-            font-weight: 700;
-            color: #111827;
-            margin-bottom: 10px;
-          ">
-            ${passenger.serialNumber || "Passenger"}
-          </div>
-
-          <table style="
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 14px;
-          ">
-
-            <tr>
-              <td style="
-                padding: 4px 0;
-                color: #6b7280;
-              ">
-                Status
-              </td>
-
-              <td style="
-                padding: 4px 0;
-                font-weight: 600;
-                color: #111827;
-              ">
-                ${statusLabel(passenger.status)}
-                ${
-                  passenger.details
-                    ? ` <span style="color:#6b7280;">(${passenger.details})</span>`
-                    : ""
-                }
-              </td>
-            </tr>
-
-            <tr>
-              <td style="
-                padding: 4px 0;
-                color: #6b7280;
-              ">
-                Coach
-              </td>
-
-              <td style="
-                padding: 4px 0;
-                color: #111827;
-              ">
-                ${passenger.coach || "Not assigned"}
-              </td>
-            </tr>
-
-            <tr>
-              <td style="
-                padding: 4px 0;
-                color: #6b7280;
-              ">
-                Berth
-              </td>
-
-              <td style="
-                padding: 4px 0;
-                color: #111827;
-              ">
-                ${passenger.berthNo || "Not assigned"}
-              </td>
-            </tr>
-
-          </table>
-        </div>
-      `,
-    )
-    .join("");
-
-  // --------------------------------------------------
-  // Tracking state banner
-  // --------------------------------------------------
-
-  const finalBanner = isFinal
-    ? `
-      <div style="
-        margin-top: 20px;
-        padding: 16px;
-        border-radius: 10px;
-        background: #fff7ed;
-        border: 1px solid #fed7aa;
-        color: #9a3412;
-        font-size: 14px;
-        line-height: 1.5;
-      ">
-        <strong>Final update</strong><br />
-        ${finalMessage}
-      </div>
-    `
-    : `
-      <div style="
-        margin-top: 20px;
-        padding: 16px;
-        border-radius: 10px;
-        background: #eff6ff;
-        border: 1px solid #bfdbfe;
-        color: #1e40af;
-        font-size: 14px;
-        line-height: 1.5;
-      ">
-        <strong>Tracking is still active.</strong><br />
-        We will continue checking your PNR and notify you when the status changes.
-      </div>
-    `;
-
-  // --------------------------------------------------
-  // HTML email
-  // --------------------------------------------------
-
-  const htmlBody = `
-<!DOCTYPE html>
-
-<html>
-
-<head>
-  <meta charset="UTF-8" />
-
-  <meta
-    name="viewport"
-    content="width=device-width, initial-scale=1.0"
-  />
-
-  <title>PNR Tracker Update</title>
-</head>
-
-<body style="
-  margin: 0;
-  padding: 0;
-  background: #f3f4f6;
-  font-family: Arial, Helvetica, sans-serif;
-  color: #111827;
-">
-
-  <div style="
-    padding: 28px 12px;
-  ">
-
-    <div style="
-      max-width: 600px;
-      margin: 0 auto;
-      background: #ffffff;
-      border-radius: 12px;
-      overflow: hidden;
-      border: 1px solid #e5e7eb;
-    ">
-
-      <!-- Header -->
-
-      <div style="
-        background: #2563eb;
-        padding: 24px;
-        color: #ffffff;
-      ">
-
-        <div style="
-          font-size: 13px;
-          opacity: 0.9;
-          margin-bottom: 6px;
-        ">
-          PNR TRACKER
-        </div>
-
-        <h1 style="
-          margin: 0;
-          font-size: 24px;
-          line-height: 1.3;
-        ">
-          ${isFinal ? "Final PNR Update" : "PNR Status Update"}
-        </h1>
-
-        <p style="
-          margin: 8px 0 0;
-          font-size: 14px;
-          opacity: 0.92;
-        ">
-          ${
-            isFinal
-              ? "Your tracking request has completed."
-              : "Your journey status has changed."
-          }
-        </p>
-
-      </div>
-
-      <!-- Main content -->
-
-      <div style="
-        padding: 24px;
-      ">
-
-        <!-- Journey details -->
-
-        <h2 style="
-          margin: 0 0 14px;
-          font-size: 18px;
-        ">
-          Journey Details
-        </h2>
-
-        <table style="
-          width: 100%;
-          border-collapse: collapse;
-          font-size: 14px;
-        ">
-
-          <tr>
-            <td style="
-              padding: 7px 0;
-              color: #6b7280;
-            ">
-              PNR
-            </td>
-
-            <td style="
-              padding: 7px 0;
-              font-weight: 700;
-              text-align: right;
-            ">
-              ${record.pnr}
-            </td>
-          </tr>
-
-          <tr>
-            <td style="
-              padding: 7px 0;
-              color: #6b7280;
-            ">
-              Train
-            </td>
-
-            <td style="
-              padding: 7px 0;
-              font-weight: 600;
-              text-align: right;
-            ">
-              ${record.trainName || "Not available"}
-            </td>
-          </tr>
-
-          <tr>
-            <td style="
-              padding: 7px 0;
-              color: #6b7280;
-            ">
-              Train Number
-            </td>
-
-            <td style="
-              padding: 7px 0;
-              text-align: right;
-            ">
-              ${record.trainNumber || "Not available"}
-            </td>
-          </tr>
-
-          <tr>
-            <td style="
-              padding: 7px 0;
-              color: #6b7280;
-            ">
-              Journey Date
-            </td>
-
-            <td style="
-              padding: 7px 0;
-              text-align: right;
-            ">
-              ${record.journeyDate || "Not available"}
-            </td>
-          </tr>
-
-        </table>
-
-        <hr style="
-          border: 0;
-          border-top: 1px solid #e5e7eb;
-          margin: 24px 0;
-        " />
-
-        <!-- Current status -->
-
-        <h2 style="
-          margin: 0 0 14px;
-          font-size: 18px;
-        ">
-          Current Status
-        </h2>
-
-        <div style="
-          padding: 16px;
-          background: #f8fafc;
-          border-radius: 10px;
-          border: 1px solid #e5e7eb;
-        ">
-
-          <div style="
-            font-size: 12px;
-            color: #6b7280;
-            margin-bottom: 6px;
-            text-transform: uppercase;
-          ">
-            Chart Status
-          </div>
-
-          <div style="
-            font-size: 18px;
-            font-weight: 700;
-            color: #111827;
-          ">
-            ${latestStatus.chart || "Not available"}
-          </div>
-
-        </div>
-
-        <!-- Passenger status -->
-
-        <h2 style="
-          margin: 24px 0 14px;
-          font-size: 18px;
-        ">
-          Passenger Status
-        </h2>
-
-        ${
-          passengerRows ||
-          `
-          <div style="
-            color: #6b7280;
-            font-size: 14px;
-          ">
-            No passenger information available.
-          </div>
-          `
-        }
-
-        <!-- Tracking status -->
-
-        ${finalBanner}
-
-      </div>
-
-      <!-- Footer -->
-
-      <div style="
-        padding: 18px 24px;
-        background: #f8fafc;
-        border-top: 1px solid #e5e7eb;
-        text-align: center;
-        color: #6b7280;
-        font-size: 12px;
-        line-height: 1.5;
-      ">
-        This is an automated notification from PNR Tracker.
-      </div>
-
-    </div>
-
-  </div>
-
-</body>
-
-</html>
 `;
 
   return {
@@ -729,14 +498,14 @@ export const handler = async () => {
           !previousStatus ||
           previousStatus.chart !== latestStatus.chart ||
           previousStatus.passengers?.length !==
-            latestStatus.passengers.length ||
+          latestStatus.passengers.length ||
           latestStatus.passengers.some((currentPassenger, index) => {
             const previousPassenger = previousStatus.passengers?.[index];
 
             return (
               !previousPassenger ||
               previousPassenger.serialNumber !==
-                currentPassenger.serialNumber ||
+              currentPassenger.serialNumber ||
               previousPassenger.status !== currentPassenger.status ||
               previousPassenger.details !== currentPassenger.details ||
               previousPassenger.coach !== currentPassenger.coach ||

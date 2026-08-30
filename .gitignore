@@ -1,20 +1,22 @@
-# Dependencies are recreated from each package-lock.json.
-**/node_modules/
+# Dependencies
+node_modules/
 
-# Local environment files and AWS credentials must never be committed.
-.env
-.env.*
-!.env.example
-.aws/
-
-# Lambda build artifacts and local output.
-**/*.zip
+# Build output
 dist/
-coverage/
-*.log
 
-# Editor and operating-system files.
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# Editor / OS
+.vscode/
+.idea/
 .DS_Store
 Thumbs.db
-.vscode/
-
