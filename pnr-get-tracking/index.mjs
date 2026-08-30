@@ -40,6 +40,7 @@ export const handler = async (event) => {
       lastStatus,
       active,
       notificationStatus,
+      stopReason,
     } = result.Item;
 
     return response(200, {
@@ -53,6 +54,7 @@ export const handler = async (event) => {
         lastStatus,
         active,
         notificationStatus,
+        stopReason,
       },
     });
   } catch (error) {
