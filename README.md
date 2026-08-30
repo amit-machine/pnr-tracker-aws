@@ -11,7 +11,7 @@ Client
   |-- GET  /tracking/{trackingId} ------> pnr-get-tracking ---+--> DynamoDB
 
 EventBridge (every 6 hours)
-  |--> pnr-update-tracking --> Railkit --> DynamoDB --> Amazon SES --> recipient
+  |--> pnr-update-tracking --> Railkit --> DynamoDB --> Amazon SNS --> recipient
 ```
 
 | Lambda | Purpose |
@@ -29,18 +29,26 @@ Configure these in the relevant Lambda configuration or a secure deployment syst
 | --- | --- | --- |
 | `RAILKIT_API_KEY` | checker, create-tracking, update-tracking | Railkit API credential. |
 | `TRACKING_TABLE_NAME` | create-tracking, get-tracking, update-tracking | DynamoDB table name. |
-| `AWS_REGION` | update-tracking | SES region, defaults in code to `ap-south-1`. |
-| `FROM_EMAIL` | update-tracking | SES-verified sender address. Use `amit777kr@gmail.com` or another email address you own. |
+| `AWS_REGION` | create-tracking, update-tracking | SNS region, defaults in code to `ap-south-1`. |
 
 The DynamoDB table uses `trackingId` (String) as its partition key.
 
-## Email notifications with Amazon SES
+## Email notifications with Amazon SNS
 
-SES is currently blocked by its sandbox. In the current SES console, **Request production access** stays disabled until a sending domain has been verified. An individually verified Gmail address is enough for sandbox tests, but it does not unlock this console flow for sending to unverified recipients.
+This project uses Amazon SNS instead of Amazon SES. It does not require a sending domain or SES production access.
 
-To continue using SES for any recipient, purchase or use a domain you control, verify it in SES with its DNS records, then request production access in `ap-south-1`.
+When someone starts tracking a PNR, the create-tracking Lambda creates a private SNS topic and subscribes the email address to it. SNS sends that person a confirmation email. They must click **Confirm subscription** before they can receive PNR updates.
 
-Because this is a small no-domain personal project, a better alternative is Amazon SNS email notifications. A friend enters their email address, receives an AWS subscription-confirmation email, and clicks the confirmation link once. After that, SNS can send that friend PNR alerts without SES production access or a domain. This requires a small code change and produces plain-text emails rather than the current custom HTML email.
+SNS notifications are plain text, so the former custom HTML SES email design is no longer used. Each tracking request has its own topic, which prevents one friend from receiving another person's PNR updates.
+
+Give the Lambda roles these SNS permissions in `ap-south-1`:
+
+| Lambda | Permissions |
+| --- | --- |
+| `pnr-track-request` | `sns:CreateTopic`, `sns:Subscribe` |
+| `pnr-update-tracking` | `sns:ListSubscriptionsByTopic`, `sns:Publish` |
+
+The existing DynamoDB permissions remain unchanged.
 
 ## Scope
 

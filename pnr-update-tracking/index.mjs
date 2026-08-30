@@ -1,5 +1,9 @@
 import { configure, checkPNRStatus } from "railkit";
-import { SESClient, SendEmailCommand } from "@aws-sdk/client-ses";
+import {
+  ListSubscriptionsByTopicCommand,
+  PublishCommand,
+  SNSClient,
+} from "@aws-sdk/client-sns";
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import {
   DynamoDBDocumentClient,
@@ -12,20 +16,15 @@ configure(process.env.RAILKIT_API_KEY);
 const client = new DynamoDBClient({});
 const dynamo = DynamoDBDocumentClient.from(client);
 
-const ses = new SESClient({
+const sns = new SNSClient({
   region: process.env.AWS_REGION || "ap-south-1",
 });
 
-// Verify this address as an SES identity in the same region as this Lambda.
-// Set FROM_EMAIL in Lambda environment variables. The fallback keeps the
-// existing deployment working while the configuration is being added.
-const FROM_EMAIL = process.env.FROM_EMAIL || "amit777kr@gmail.com";
-
 // --------------------------------------------------
-// Send status email
+// Build a plain-text status notification for Amazon SNS email delivery.
 // --------------------------------------------------
 
-async function sendStatusEmail(
+async function buildStatusNotification(
   record,
   previousStatus,
   latestStatus,
@@ -519,41 +518,51 @@ This is an automated notification from PNR Tracker.
 </html>
 `;
 
-  // --------------------------------------------------
-  // Send email through SES
-  // --------------------------------------------------
+  return {
+    subject,
+    message: textBody.trim(),
+  };
+}
 
-  await ses.send(
-    new SendEmailCommand({
-      Source: FROM_EMAIL,
+async function publishStatusNotification(record, notification) {
+  if (!record.snsTopicArn) {
+    // Existing SES-era records can still be updated and closed normally.
+    // New tracking requests always include an SNS topic.
+    console.warn(
+      `Skipping notification for legacy tracking ${record.trackingId}: no SNS topic`,
+    );
+    return;
+  }
 
-      Destination: {
-        ToAddresses: [record.email],
-      },
-
-      Message: {
-        Subject: {
-          Data: subject,
-          Charset: "UTF-8",
-        },
-
-        Body: {
-          Text: {
-            Data: textBody,
-            Charset: "UTF-8",
-          },
-
-          Html: {
-            Data: htmlBody,
-            Charset: "UTF-8",
-          },
-        },
-      },
+  await sns.send(
+    new PublishCommand({
+      TopicArn: record.snsTopicArn,
+      Subject: notification.subject,
+      Message: notification.message,
     }),
   );
 
   console.log(
-    `${isFinal ? "Final" : "Status change"} email sent to ${record.email}`,
+    `${record.active ? "Status change" : "Final"} SNS notification published for ${record.trackingId}`,
+  );
+}
+
+async function isNotificationConfirmed(record) {
+  if (!record.snsTopicArn) {
+    // Records created before the SNS migration remain processable.
+    return true;
+  }
+
+  const result = await sns.send(
+    new ListSubscriptionsByTopicCommand({
+      TopicArn: record.snsTopicArn,
+    }),
+  );
+
+  return (result.Subscriptions || []).some(
+    (subscription) =>
+      subscription.Endpoint?.toLowerCase() === record.email?.toLowerCase() &&
+      subscription.SubscriptionArn !== "PendingConfirmation",
   );
 }
 
@@ -671,6 +680,16 @@ export const handler = async () => {
         console.log(
           `Checking PNR ${record.pnr} for tracking ${record.trackingId}`,
         );
+
+        if (!(await isNotificationConfirmed(record))) {
+          unchangedCount++;
+
+          console.log(
+            `Waiting for SNS confirmation for tracking ${record.trackingId}`,
+          );
+
+          continue;
+        }
 
         // 3. Fetch latest PNR status
 
@@ -790,13 +809,15 @@ export const handler = async () => {
           // 9. Send email first
           // ------------------------------------------------
 
-          await sendStatusEmail(
+          const notification = await buildStatusNotification(
             record,
             previousStatus,
             latestStatus,
             isFinal,
             finalReason,
           );
+
+          await publishStatusNotification(record, notification);
 
           // ------------------------------------------------
           // 10. Save status

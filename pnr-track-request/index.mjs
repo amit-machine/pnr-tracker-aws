@@ -1,12 +1,20 @@
 import { configure, checkPNRStatus } from "railkit";
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient, PutCommand } from "@aws-sdk/lib-dynamodb";
+import {
+  CreateTopicCommand,
+  SNSClient,
+  SubscribeCommand,
+} from "@aws-sdk/client-sns";
 import { randomUUID } from "crypto";
 
 configure(process.env.RAILKIT_API_KEY);
 
 const dynamoClient = new DynamoDBClient({});
 const dynamo = DynamoDBDocumentClient.from(dynamoClient);
+const sns = new SNSClient({
+  region: process.env.AWS_REGION || "ap-south-1",
+});
 
 export const handler = async (event) => {
   try {
@@ -61,6 +69,15 @@ export const handler = async (event) => {
     const trackingId = randomUUID();
     const now = new Date().toISOString();
 
+    // Each tracking request gets its own topic. This keeps notifications
+    // private: a subscriber only receives updates for this tracking ID.
+    // SNS sends the recipient a confirmation email before any updates are
+    // delivered, so SES production access is not required.
+    const notification = await createNotificationSubscription(
+      trackingId,
+      email.toLowerCase().trim(),
+    );
+
     // Railkit returns journey date/time as something like:
     // "Sep 2, 2026 3:30:00 PM"
     //
@@ -86,6 +103,10 @@ export const handler = async (event) => {
 
       lastStatus,
 
+      snsTopicArn: notification.topicArn,
+      snsSubscriptionArn: notification.subscriptionArn,
+      notificationStatus: "PENDING_CONFIRMATION",
+
       createdAt: now,
       updatedAt: now,
     };
@@ -99,7 +120,8 @@ export const handler = async (event) => {
 
     return response(200, {
       success: true,
-      message: "PNR tracking created",
+      message:
+        "PNR tracking created. Please confirm the Amazon SNS subscription email before status alerts can be delivered.",
       trackingId,
       pnr: String(pnr),
       email: email.toLowerCase().trim(),
@@ -114,6 +136,32 @@ export const handler = async (event) => {
     });
   }
 };
+
+async function createNotificationSubscription(trackingId, email) {
+  const topicResult = await sns.send(
+    new CreateTopicCommand({
+      Name: `pnr-tracker-${trackingId}`,
+    }),
+  );
+
+  if (!topicResult.TopicArn) {
+    throw new Error("SNS did not return a topic ARN");
+  }
+
+  const subscriptionResult = await sns.send(
+    new SubscribeCommand({
+      TopicArn: topicResult.TopicArn,
+      Protocol: "email",
+      Endpoint: email,
+      ReturnSubscriptionArn: true,
+    }),
+  );
+
+  return {
+    topicArn: topicResult.TopicArn,
+    subscriptionArn: subscriptionResult.SubscriptionArn || "PendingConfirmation",
+  };
+}
 
 // --------------------------------------------------
 // Convert Railkit journey date to explicit IST ISO
