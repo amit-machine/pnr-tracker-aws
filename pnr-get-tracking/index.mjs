@@ -31,9 +31,29 @@ export const handler = async (event) => {
       });
     }
 
+    const {
+      trackingId: id,
+      pnr,
+      trainNumber,
+      trainName,
+      journeyDate,
+      lastStatus,
+      active,
+      notificationStatus,
+    } = result.Item;
+
     return response(200, {
       success: true,
-      data: result.Item,
+      data: {
+        trackingId: id,
+        pnr,
+        trainNumber,
+        trainName,
+        journeyDate,
+        lastStatus,
+        active,
+        notificationStatus,
+      },
     });
   } catch (error) {
     console.error("Get tracking failed:", error);
