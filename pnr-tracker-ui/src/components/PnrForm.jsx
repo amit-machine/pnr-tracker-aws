@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { getPnrStatus } from "../services/pnrApi";
+import { canTrackPnr } from "../utils/pnrUtils";
 import PnrStatus from "./PnrStatus";
 import TrackingForm from "./TrackingForm";
 
@@ -20,6 +21,7 @@ function PnrForm() {
 
     setPnr(value);
     setError("");
+    setStatus(null);
   };
 
   const handleGetStatus = async () => {
@@ -39,7 +41,9 @@ function PnrForm() {
       setStatus(data);
     } catch (error) {
       console.error("Failed to fetch PNR status:", error);
-      setError("Unable to fetch PNR status. Please try again.");
+      setError(
+        error.message || "Unable to fetch PNR status. Please try again.",
+      );
     } finally {
       setLoading(false);
     }
@@ -83,9 +87,13 @@ function PnrForm() {
 
           <PnrStatus status={status} />
 
-          <div className="section-divider" />
+          {canTrackPnr(status) && (
+            <>
+              <div className="section-divider" />
 
-          <TrackingForm pnr={pnr} />
+              <TrackingForm pnr={pnr} />
+            </>
+          )}
         </>
       )}
     </div>
