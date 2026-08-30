@@ -21,24 +21,24 @@ The project consists of:
 The high-level flow is:
 
 ```text
-                         ┌──────────────────┐
-                         │   React Client   │
-                         └────────┬─────────┘
-                                  │
-                    ┌─────────────┴─────────────┐
-                    │                           │
-              GET /pnr/{pnr}              POST /track
-                    │                           │
-                    ▼                           ▼
-             pnr-checker                pnr-track-request
-                    │                           │
-                    ▼                           ├──> Railkit
-                 Railkit                         │
-                                                ▼
-                                           DynamoDB
-                                                │
-                                                ▼
-                                               SNS
+                              ┌──────────────────┐
+                              │   React Client   │
+                              └─────────┬────────┘
+                                        │
+              ┌─────────────────────────┼─────────────────────────┐
+              │                         │                         │
+        GET /pnr/{pnr}             POST /track          GET /track/{trackingId}
+              │                         │                         │
+              ▼                         ▼                         ▼
+        pnr-checker             pnr-track-request           pnr-get-tracking
+              │                         │                         │
+              ▼                         ├──> Railkit               ▼
+           Railkit                      │                     DynamoDB
+                                         ▼
+                                    DynamoDB
+                                         │
+                                         ▼
+                                        SNS
 
 
 EventBridge
@@ -71,10 +71,14 @@ pnr-tracker-ui/
 │   │   ├── PassengerCard.jsx
 │   │   ├── PnrForm.jsx
 │   │   ├── PnrStatus.jsx
-│   │   └── TrackingForm.jsx
+│   │   ├── TrackingForm.jsx
+│   │   └── TrackingLookup.jsx
 │   │
 │   ├── services/
 │   │   └── pnrApi.js
+│   │
+│   ├── utils/
+│   │   └── pnrUtils.js
 │   │
 │   ├── App.jsx
 │   ├── index.css
@@ -88,7 +92,6 @@ pnr-tracker-ui/
 ├── index.html
 ├── package.json
 ├── package-lock.json
-├── README.md
 └── vite.config.js
 ```
 
@@ -120,7 +123,7 @@ Responsible for displaying:
 
 #### `PassengerCard.jsx`
 
-Responsible for displaying information for an individual passenger.
+Responsible for displaying information for an individual passenger, including a human-readable status label (for example "Waiting List" instead of the raw `WL` code).
 
 #### `TrackingForm.jsx`
 
@@ -130,10 +133,27 @@ Responsible for:
 - Validating the email.
 - Starting PNR tracking.
 - Displaying tracking confirmation.
+- Displaying the tracking ID with a copy-to-clipboard button so it can be used later to check on the request.
+
+#### `TrackingLookup.jsx`
+
+Responsible for:
+
+- Accepting an existing tracking ID.
+- Retrieving that tracking request.
+- Displaying its current PNR, train, chart, and passenger status.
 
 #### `services/pnrApi.js`
 
 Contains API-related functionality so that HTTP calls are kept separate from UI components.
+
+#### `utils/pnrUtils.js`
+
+Contains shared frontend logic that doesn't belong in a component:
+
+- `canTrackPnr` — determines whether a PNR is still eligible for tracking (chart not yet prepared, journey not yet passed).
+- `isChartPrepared` — the same lenient chart-status check used by the backend, so the frontend and backend agree on eligibility.
+- `statusLabel` — maps raw passenger status codes (`WL`, `CNF`, `RAC`, `CAN`) to human-readable labels.
 
 ---
 
@@ -158,9 +178,11 @@ Starts tracking a PNR for an email address.
 Responsibilities:
 
 - Validate the request.
+- Reject the request if this PNR/email pair is already being actively tracked.
+- Check the current PNR status.
+- Reject the request if the railway chart has already been prepared or the journey has already passed.
 - Create an SNS topic.
 - Subscribe the email address to the topic.
-- Check the current PNR status.
 - Store the initial tracking information in DynamoDB.
 
 ```text
@@ -180,6 +202,8 @@ Request:
 
 Returns an existing tracking request using its tracking ID.
 
+The response only includes fields relevant to the client (`trackingId`, `pnr`, `trainNumber`, `trainName`, `journeyDate`, `lastStatus`, `active`, `notificationStatus`). It intentionally excludes the recipient's email address and the internal SNS topic/subscription ARNs.
+
 ```text
 GET /track/{trackingId}
 ```
@@ -192,9 +216,8 @@ Responsibilities:
 
 - Find active tracking requests.
 - Check the latest PNR status.
-- Compare it with the previously stored status.
-- Send an email when the status changes.
-- Store the new status.
+- Compare it with the previously stored status, matching passengers by serial number.
+- Store the new status first, then send an email when the status changes. Storing before sending means a crash between the two steps can only skip a notification, never send a duplicate one on the next run.
 - Stop tracking when a final state is reached.
 
 ---
@@ -301,6 +324,10 @@ Tracking records contain the information required to:
 - Store the latest PNR status.
 - Determine whether tracking is still active.
 
+## `PnrEmailIndex` (GSI)
+
+A global secondary index named `PnrEmailIndex` uses `trackingKey` (`{pnr}#{email}`, lowercased email) as its partition key. `pnr-track-request` queries it to reject a new tracking request when the same PNR/email pair is already being actively tracked.
+
 ---
 
 # Email Notifications
@@ -353,7 +380,7 @@ sns:ListSubscriptionsByTopic
 sns:Publish
 ```
 
-Existing DynamoDB permissions remain unchanged.
+`pnr-track-request` additionally requires `dynamodb:Query` permission on the `PnrEmailIndex` GSI (in addition to its existing table permissions) to check for duplicate active tracking requests. Other existing DynamoDB permissions remain unchanged.
 
 ---
 
@@ -365,11 +392,19 @@ A tracking request follows this general lifecycle:
 POST /track
       │
       ▼
-Create SNS topic
-+ email subscription
+Reject if this PNR/email
+is already actively tracked
       │
       ▼
 Check PNR immediately
+      │
+      ▼
+Reject if chart already
+prepared or journey passed
+      │
+      ▼
+Create SNS topic
++ email subscription
       │
       ▼
 Store initial status
@@ -394,13 +429,14 @@ Check latest PNR status
       ├── Status changed
       │       │
       │       ▼
-      │   Send notification
-      │   + save status
+      │   Save status
+      │   + send notification
       │
       └── Final state
               │
               ▼
-        Send final notification
+        Save status
+        + send final notification
         + deactivate tracking
 ```
 
@@ -522,6 +558,8 @@ After a successful request:
 4. Click **Confirm subscription**.
 5. Verify that the DynamoDB record contains the expected tracking information.
 6. Manually invoke `pnr-update-tracking` when testing the scheduled update flow.
+
+Calling `/track` again with the same PNR and email while that request is still active returns `409 Conflict` with the existing `trackingId` instead of creating a new record.
 
 ## 3. Get a Tracking Request
 
