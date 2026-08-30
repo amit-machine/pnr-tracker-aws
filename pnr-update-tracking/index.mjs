@@ -20,6 +20,12 @@ const sns = new SNSClient({
   region: process.env.AWS_REGION || "ap-south-1",
 });
 
+// Number of consecutive scheduled runs that must all report this PNR
+// as invalid before tracking is actually stopped. Guards against a
+// single transient upstream error (e.g. indianrail.gov.in maintenance)
+// being mistaken for a permanently dead PNR.
+const INVALID_PNR_CONFIRMATION_THRESHOLD = 3;
+
 // --------------------------------------------------
 // Index passengers by serial number for diffing
 // --------------------------------------------------
@@ -175,6 +181,11 @@ async function buildStatusNotification(
       case "JOURNEY_OVER":
         finalMessage =
           "Your journey time has passed. Tracking has now been stopped.";
+        break;
+
+      case "INVALID_PNR":
+        finalMessage =
+          "This PNR is no longer available. It may have expired or become invalid. Tracking has now been stopped.";
         break;
 
       default:
@@ -430,6 +441,19 @@ function isChartPrepared(chartStatus) {
 }
 
 // --------------------------------------------------
+// Check whether Railkit reported this PNR as permanently
+// gone, as opposed to a temporary lookup failure. Only the
+// exact confirmed error text should count - anything else
+// (rate limits, outages) must stay classified as transient.
+// --------------------------------------------------
+
+function isPnrInvalid(errorText) {
+  const error = String(errorText || "").toLowerCase();
+
+  return error.includes("no pnr data found") || error.includes("invalid pnr");
+}
+
+// --------------------------------------------------
 // Check whether journey has passed
 // --------------------------------------------------
 
@@ -485,6 +509,7 @@ export const handler = async () => {
     let unchangedCount = 0;
     let failedCount = 0;
     let finalCount = 0;
+    let invalidCount = 0;
 
     // 2. Process each active tracking record
 
@@ -509,7 +534,91 @@ export const handler = async () => {
         const result = await checkPNRStatus(record.pnr);
 
         if (!result?.success) {
-          console.error(`Failed to fetch PNR ${record.pnr}`);
+          if (isPnrInvalid(result?.error)) {
+            const invalidCheckCount = (record.invalidCheckCount || 0) + 1;
+
+            console.log(
+              `PNR ${record.pnr} looks invalid (check ${invalidCheckCount}/${INVALID_PNR_CONFIRMATION_THRESHOLD}): ${result?.error}`,
+            );
+
+            // A single "invalid" response can be a temporary upstream
+            // issue (e.g. indianrail.gov.in maintenance) rather than a
+            // genuinely dead PNR - Railkit doesn't distinguish the two
+            // in its error text. Require several consecutive occurrences
+            // across scheduled runs before treating it as final, so a
+            // brief outage can't wrongly stop someone's tracking.
+            if (invalidCheckCount < INVALID_PNR_CONFIRMATION_THRESHOLD) {
+              await dynamo.send(
+                new UpdateCommand({
+                  TableName: process.env.TRACKING_TABLE_NAME,
+
+                  Key: {
+                    trackingId: record.trackingId,
+                  },
+
+                  UpdateExpression:
+                    "SET updatedAt = :updatedAt, invalidCheckCount = :count",
+
+                  ExpressionAttributeValues: {
+                    ":updatedAt": new Date().toISOString(),
+                    ":count": invalidCheckCount,
+                  },
+                }),
+              );
+
+              unchangedCount++;
+
+              continue;
+            }
+
+            const previousStatus = record.lastStatus || null;
+
+            const notification = await buildStatusNotification(
+              record,
+              previousStatus,
+              previousStatus,
+              true,
+              "INVALID_PNR",
+            );
+
+            await dynamo.send(
+              new UpdateCommand({
+                TableName: process.env.TRACKING_TABLE_NAME,
+
+                Key: {
+                  trackingId: record.trackingId,
+                },
+
+                UpdateExpression:
+                  "SET updatedAt = :updatedAt, active = :active, stopReason = :stopReason",
+
+                ExpressionAttributeValues: {
+                  ":updatedAt": new Date().toISOString(),
+                  ":active": false,
+                  ":stopReason": "INVALID_PNR",
+                },
+              }),
+            );
+
+            await publishStatusNotification(record, notification);
+
+            invalidCount++;
+            finalCount++;
+
+            console.log(
+              `Tracking ${record.trackingId} marked INACTIVE (invalid PNR, confirmed after ${invalidCheckCount} checks)`,
+            );
+
+            continue;
+          }
+
+          // Temporary Railkit failure (outage, rate limit, unexpected
+          // shape, etc.) - stays active and is retried next run. Do
+          // not mark the record invalid on anything but the confirmed
+          // "PNR no longer exists" error text checked above.
+          console.error(
+            `Failed to fetch PNR ${record.pnr}: ${result?.error || "unknown error"}`,
+          );
 
           failedCount++;
 
@@ -635,12 +744,14 @@ export const handler = async () => {
                 },
 
                 UpdateExpression:
-                  "SET lastStatus = :status, updatedAt = :updatedAt, active = :active",
+                  "SET lastStatus = :status, updatedAt = :updatedAt, active = :active, stopReason = :stopReason, invalidCheckCount = :zero",
 
                 ExpressionAttributeValues: {
                   ":status": latestStatus,
                   ":updatedAt": new Date().toISOString(),
                   ":active": false,
+                  ":stopReason": finalReason,
+                  ":zero": 0,
                 },
               }),
             );
@@ -656,11 +767,12 @@ export const handler = async () => {
                 },
 
                 UpdateExpression:
-                  "SET lastStatus = :status, updatedAt = :updatedAt",
+                  "SET lastStatus = :status, updatedAt = :updatedAt, invalidCheckCount = :zero",
 
                 ExpressionAttributeValues: {
                   ":status": latestStatus,
                   ":updatedAt": new Date().toISOString(),
+                  ":zero": 0,
                 },
               }),
             );
@@ -674,6 +786,28 @@ export const handler = async () => {
 
           await publishStatusNotification(record, notification);
         } else {
+          // A successful check with no status change still means
+          // Railkit recognizes the PNR again - clear any invalid-check
+          // streak so it doesn't carry over from an earlier, unrelated
+          // transient blip.
+          if (record.invalidCheckCount) {
+            await dynamo.send(
+              new UpdateCommand({
+                TableName: process.env.TRACKING_TABLE_NAME,
+
+                Key: {
+                  trackingId: record.trackingId,
+                },
+
+                UpdateExpression: "SET invalidCheckCount = :zero",
+
+                ExpressionAttributeValues: {
+                  ":zero": 0,
+                },
+              }),
+            );
+          }
+
           unchangedCount++;
 
           console.log(`No change for PNR ${record.pnr}`);
@@ -701,6 +835,7 @@ export const handler = async () => {
         changed: changedCount,
         unchanged: unchangedCount,
         final: finalCount,
+        invalid: invalidCount,
         failed: failedCount,
       }),
     };
