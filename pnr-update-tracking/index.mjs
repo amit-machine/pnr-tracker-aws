@@ -21,6 +21,55 @@ const sns = new SNSClient({
 });
 
 // --------------------------------------------------
+// Index passengers by serial number for diffing
+// --------------------------------------------------
+
+function toSerialMap(passengers) {
+  return new Map(
+    (passengers || []).map((passenger) => [passenger.serialNumber, passenger]),
+  );
+}
+
+// --------------------------------------------------
+// Check whether the status actually changed, comparing
+// passengers by serialNumber (matches the diff logic in
+// buildStatusNotification, instead of by array position).
+// --------------------------------------------------
+
+function hasStatusChanged(previousStatus, latestStatus) {
+  if (!previousStatus) {
+    return true;
+  }
+
+  if (previousStatus.chart !== latestStatus.chart) {
+    return true;
+  }
+
+  const previousBySerial = toSerialMap(previousStatus.passengers);
+  const latestBySerial = toSerialMap(latestStatus.passengers);
+
+  if (previousBySerial.size !== latestBySerial.size) {
+    return true;
+  }
+
+  for (const [serialNumber, current] of latestBySerial) {
+    const previous = previousBySerial.get(serialNumber);
+
+    if (
+      !previous ||
+      previous.status !== current.status ||
+      previous.details !== current.details ||
+      previous.coach !== current.coach ||
+      previous.berthNo !== current.berthNo
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+// --------------------------------------------------
 // Build a plain-text status notification for Amazon SNS email delivery.
 // --------------------------------------------------
 
@@ -153,13 +202,8 @@ async function buildStatusNotification(
   const previousPassengers = previousStatus?.passengers || [];
   const latestPassengers = latestStatus?.passengers || [];
 
-  const previousBySerial = new Map(
-    previousPassengers.map((passenger) => [passenger.serialNumber, passenger]),
-  );
-
-  const latestBySerial = new Map(
-    latestPassengers.map((passenger) => [passenger.serialNumber, passenger]),
-  );
+  const previousBySerial = toSerialMap(previousPassengers);
+  const latestBySerial = toSerialMap(latestPassengers);
 
   // Check current passengers
   for (const current of latestPassengers) {
@@ -494,24 +538,7 @@ export const handler = async () => {
 
         // 6. Compare previous and current status
 
-        const statusChanged =
-          !previousStatus ||
-          previousStatus.chart !== latestStatus.chart ||
-          previousStatus.passengers?.length !==
-          latestStatus.passengers.length ||
-          latestStatus.passengers.some((currentPassenger, index) => {
-            const previousPassenger = previousStatus.passengers?.[index];
-
-            return (
-              !previousPassenger ||
-              previousPassenger.serialNumber !==
-              currentPassenger.serialNumber ||
-              previousPassenger.status !== currentPassenger.status ||
-              previousPassenger.details !== currentPassenger.details ||
-              previousPassenger.coach !== currentPassenger.coach ||
-              previousPassenger.berthNo !== currentPassenger.berthNo
-            );
-          });
+        const statusChanged = hasStatusChanged(previousStatus, latestStatus);
 
         console.log(`Previous status: ${JSON.stringify(previousStatus)}`);
 
@@ -575,7 +602,7 @@ export const handler = async () => {
           }
 
           // ------------------------------------------------
-          // 9. Send email first
+          // 9. Build the notification content
           // ------------------------------------------------
 
           const notification = await buildStatusNotification(
@@ -586,10 +613,13 @@ export const handler = async () => {
             finalReason,
           );
 
-          await publishStatusNotification(record, notification);
-
           // ------------------------------------------------
-          // 10. Save status
+          // 10. Save status first.
+          //
+          // Persisting before publishing means a crash between
+          // the two calls can only drop a notification, not
+          // cause the next run to re-detect the same change and
+          // send a duplicate one.
           //
           // Final -> also deactivate
           // Normal change -> remain active
@@ -637,6 +667,12 @@ export const handler = async () => {
 
             console.log(`Updated tracking ${record.trackingId}`);
           }
+
+          // ------------------------------------------------
+          // 11. Send the notification
+          // ------------------------------------------------
+
+          await publishStatusNotification(record, notification);
         } else {
           unchangedCount++;
 
