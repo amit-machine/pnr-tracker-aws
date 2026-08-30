@@ -4,7 +4,11 @@ import {
   SNSClient,
   SubscribeCommand,
 } from "@aws-sdk/client-sns";
-import { DynamoDBDocumentClient, PutCommand } from "@aws-sdk/lib-dynamodb";
+import {
+  DynamoDBDocumentClient,
+  PutCommand,
+  QueryCommand,
+} from "@aws-sdk/lib-dynamodb";
 import { randomUUID } from "crypto";
 import { checkPNRStatus, configure } from "railkit";
 
@@ -50,6 +54,23 @@ export const handler = async (event) => {
 
     const normalizedEmail = email.toLowerCase().trim();
     const normalizedPnr = String(pnr);
+
+    // Used by the PnrEmailIndex GSI
+    const trackingKey = `${normalizedPnr}#${normalizedEmail}`;
+
+    // --------------------------------------------------
+    // Check for an existing active tracking request
+    // --------------------------------------------------
+
+    const existingTracking = await findActiveTracking(trackingKey);
+
+    if (existingTracking) {
+      return response(409, {
+        success: false,
+        message: "This PNR is already being tracked for this email address.",
+        trackingId: existingTracking.trackingId,
+      });
+    }
 
     // --------------------------------------------------
     // Check current PNR status
@@ -134,6 +155,9 @@ export const handler = async (event) => {
 
       email: normalizedEmail,
 
+      // Used by PnrEmailIndex
+      trackingKey,
+
       active: true,
       verified: false,
 
@@ -177,6 +201,37 @@ export const handler = async (event) => {
     });
   }
 };
+
+// --------------------------------------------------
+// Find an existing active tracking request
+// --------------------------------------------------
+
+async function findActiveTracking(trackingKey) {
+  const result = await dynamo.send(
+    new QueryCommand({
+      TableName: process.env.TRACKING_TABLE_NAME,
+
+      IndexName: "PnrEmailIndex",
+
+      KeyConditionExpression: "trackingKey = :trackingKey",
+
+      FilterExpression: "#active = :active",
+
+      ExpressionAttributeNames: {
+        "#active": "active",
+      },
+
+      ExpressionAttributeValues: {
+        ":trackingKey": trackingKey,
+        ":active": true,
+      },
+
+      ProjectionExpression: "trackingId, pnr, email, active",
+    }),
+  );
+
+  return result.Items?.[0] || null;
+}
 
 // --------------------------------------------------
 // Create SNS topic + email subscription
@@ -240,8 +295,8 @@ function convertJourneyDateToIST(journeyDate) {
     return null;
   }
 
-  // If Railkit ever returns an ISO timestamp with
-  // timezone information already present, keep it.
+  // If Railkit returns an ISO timestamp with timezone information,
+  // keep it as-is.
   if (journeyDate.includes("Z") || /[+-]\d{2}:\d{2}$/.test(journeyDate)) {
     const date = new Date(journeyDate);
 
