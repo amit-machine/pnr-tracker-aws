@@ -1,6 +1,9 @@
 import { useState } from "react";
 import { getTrackingRequest } from "../services/pnrApi";
-import { statusLabel } from "../utils/pnrUtils";
+import { statusLabel, stopReasonLabel } from "../utils/pnrUtils";
+
+const TRACKING_ID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function TrackingLookup() {
   const [trackingId, setTrackingId] = useState("");
@@ -8,12 +11,14 @@ function TrackingLookup() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
+  const isValidTrackingId = TRACKING_ID_PATTERN.test(trackingId.trim());
+
   const handleLookup = async () => {
     setError("");
     setTracking(null);
 
-    if (!trackingId.trim()) {
-      setError("Please enter a tracking ID.");
+    if (!isValidTrackingId) {
+      setError("Please enter a valid tracking ID.");
       return;
     }
 
@@ -50,7 +55,7 @@ function TrackingLookup() {
       <button
         className="primary-button"
         onClick={handleLookup}
-        disabled={loading}
+        disabled={!isValidTrackingId || loading}
       >
         {loading ? "Checking..." : "Check Tracking Request"}
       </button>
@@ -74,6 +79,10 @@ function TrackingLookup() {
             {tracking.trainNumber || "Not available"} -{" "}
             {tracking.trainName || "Not available"}
           </p>
+
+          {!tracking.active && stopReasonLabel(tracking.stopReason) && (
+            <p>Tracking stopped: {stopReasonLabel(tracking.stopReason)}</p>
+          )}
 
           <p>Chart: {tracking.lastStatus?.chart || "Not available"}</p>
 
