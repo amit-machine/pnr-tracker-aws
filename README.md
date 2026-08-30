@@ -36,18 +36,11 @@ The DynamoDB table uses `trackingId` (String) as its partition key.
 
 ## Email notifications with Amazon SES
 
-SES is the current blocker. While an SES account is in the sandbox, it can email only verified recipient addresses. To send PNR updates to friends without manually verifying every one of their emails, request production access in **ap-south-1**.
+SES is currently blocked by its sandbox. In the current SES console, **Request production access** stays disabled until a sending domain has been verified. An individually verified Gmail address is enough for sandbox tests, but it does not unlock this console flow for sending to unverified recipients.
 
-You do not need to buy a domain. A verified Gmail address can be used as the sender.
+To continue using SES for any recipient, purchase or use a domain you control, verify it in SES with its DNS records, then request production access in `ap-south-1`.
 
-1. Open the [SES account dashboard in ap-south-1](https://ap-south-1.console.aws.amazon.com/ses/home?region=ap-south-1#/account).
-2. In **Verified identities**, make sure `amit777kr@gmail.com` is verified.
-3. On **Account dashboard**, use the sandbox notice: **View Get set up page** → **Request production access**.
-4. Choose **Transactional**. Describe the use case clearly: “A small personal PNR tracking tool for me and friends. Users explicitly enter their own email address to receive status-change notifications only. No marketing or bulk email.”
-5. Use a small, realistic volume, such as fewer than 20 recipients and fewer than 100 emails per day, then submit the request.
-6. After AWS approves it, test with a friend’s email address that has not been verified in SES.
-
-The SES sender identity and the production-access request must be in `ap-south-1`, because that is the region used by the update Lambda. If sending still fails after approval, confirm the Lambda role has `ses:SendEmail` permission and that `FROM_EMAIL` is verified in that same region.
+Because this is a small no-domain personal project, a better alternative is Amazon SNS email notifications. A friend enters their email address, receives an AWS subscription-confirmation email, and clicks the confirmation link once. After that, SNS can send that friend PNR alerts without SES production access or a domain. This requires a small code change and produces plain-text emails rather than the current custom HTML email.
 
 ## Scope
 
