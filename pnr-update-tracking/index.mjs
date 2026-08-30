@@ -16,7 +16,10 @@ const ses = new SESClient({
   region: process.env.AWS_REGION || "ap-south-1",
 });
 
-const FROM_EMAIL = "amit777kr@gmail.com";
+// Verify this address as an SES identity in the same region as this Lambda.
+// Set FROM_EMAIL in Lambda environment variables. The fallback keeps the
+// existing deployment working while the configuration is being added.
+const FROM_EMAIL = process.env.FROM_EMAIL || "amit777kr@gmail.com";
 
 // --------------------------------------------------
 // Send status email

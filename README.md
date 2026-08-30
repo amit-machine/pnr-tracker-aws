@@ -1,6 +1,8 @@
 # PNR Tracker (AWS Lambda)
 
-PNR Tracker checks Indian Railways PNR status through Railkit, stores tracking requests in Amazon DynamoDB, and sends an email when a tracked status changes. An Amazon EventBridge schedule invokes the tracker every six hours.
+PNR Tracker is a small personal learning project for checking Indian Railways PNR status through Railkit. It stores tracking requests in Amazon DynamoDB and sends an email when a tracked status changes. An Amazon EventBridge schedule invokes the tracker every six hours.
+
+It is intended for the owner and a small group of friends—not as a public or production-scale service. The design intentionally stays simple.
 
 ## Current architecture
 
@@ -34,8 +36,9 @@ Configure these in the relevant Lambda configuration or a secure deployment syst
 | `RAILKIT_API_KEY` | checker, create-tracking, update-tracking | Railkit API credential. |
 | `TRACKING_TABLE_NAME` | create-tracking, get-tracking, update-tracking | DynamoDB table name. |
 | `AWS_REGION` | update-tracking | SES region, defaults in code to `ap-south-1`. |
+| `FROM_EMAIL` | update-tracking | Verified SES sender address. Defaults temporarily to `amit777kr@gmail.com`. |
 
-The SES sender is currently hard-coded in `pnr-update-tracking/index.mjs`. Move it to a `FROM_EMAIL` environment variable before production so code and environments stay separate.
+Set `FROM_EMAIL` to an email address you have verified in SES in `ap-south-1`. You do **not** need to buy or verify a domain for this small project; an individually verified Gmail address is enough as the sender.
 
 ## Required AWS permissions
 
@@ -50,11 +53,20 @@ Use a separate least-privilege IAM role for each Lambda.
 
 The EventBridge rule needs permission to invoke `pnr-update-tracking`.
 
-## SES sandbox versus production
+## Sending emails to friends with SES
 
-SES sandbox is expected to reject an email sent to an unverified recipient. While in the sandbox, verify both the sender and every recipient in the same SES region. To send tracker notifications to arbitrary users, request production access in that same region and verify a domain identity (recommended) with DKIM. The production-access request should describe this opt-in, transactional PNR-status use case, how recipient consent is obtained, expected volume, bounce/complaint handling, and an unsubscribe/contact path.
+SES sandbox is expected to reject an email sent to an unverified recipient. While in the sandbox, verify both the sender and every recipient in the **same SES region**. This project uses `ap-south-1`, so verify the sender and request production access there—not in another region.
 
-Do not work around the sandbox by using unverified addresses. Until production access is approved, use one verified test recipient. A separate transactional email provider is an alternative only if its terms, identity verification, and compliance suit the product.
+To let a friend use their own email address, request that SES production access be enabled:
+
+1. Open the [SES console for ap-south-1](https://ap-south-1.console.aws.amazon.com/ses/home?region=ap-south-1#/account).
+2. Verify `amit777kr@gmail.com` (or your chosen `FROM_EMAIL`) under **Verified identities**. Confirm its status is *Verified*.
+3. On **Account dashboard**, use the sandbox notice: **View Get set up page** → **Request production access**.
+4. Choose **Transactional**. Describe the use case clearly: “A small personal PNR tracking tool for me and friends. Users explicitly enter their own email address to receive status-change notifications only. No marketing or bulk email.”
+5. State a small, realistic volume (for example, fewer than 20 recipients and fewer than 100 emails per day). Provide a contact email you monitor. If the form asks for a website, use this GitHub repository URL and explain that it is a private personal project with no public website.
+6. Submit, then wait for AWS’s review. Approval is controlled by AWS; there is no code change that can bypass the sandbox safely.
+
+After approval, test with an unverified friend’s address. If it fails, first confirm the SES account is out of the sandbox in `ap-south-1`, the sender identity is verified in `ap-south-1`, the Lambda uses that same region, and its IAM role allows `ses:SendEmail`.
 
 ## Local development and packaging
 
@@ -70,14 +82,13 @@ Compress-Archive -Path index.mjs, node_modules -DestinationPath ..\pnr-track-req
 
 Repeat for the other three folders. If this grows, migrate to one root npm workspace with shared code in a `packages/shared` package and deploy through AWS SAM or the AWS CDK. That should be the next architecture refactor—not an immediate prerequisite for GitHub.
 
-## Important current limitations
+## Intentional scope and current limitations
 
 - There is no infrastructure-as-code definition, so API Gateway routes, Lambda settings, IAM roles, EventBridge rule, and DynamoDB table are not reproducible from this repository.
-- `pnr-update-tracking` uses DynamoDB `Scan`, which becomes expensive and slow as tracking requests grow. Model active records for a `Query`, or use a scheduled queue-based design.
-- The update Lambda processes records serially and has no pagination. It can time out or miss records once the table grows.
-- Tracking records are created with `verified: false`, but there is no email-verification flow and the value is not enforced. Add a verification token before activating notifications.
-- The get-tracking endpoint returns the stored email address. Restrict access or redact it from API responses.
-- No tests, retries/dead-letter handling, structured metrics, TTL cleanup, or alarms are currently defined.
+- `pnr-update-tracking` uses DynamoDB `Scan` and processes records serially. This is acceptable for the very small number of personal tracking requests expected here, but it is not designed for a large user base.
+- Tracking records are created with `verified: false`, but there is no email-verification flow and the value is not enforced. Keep use limited to people you know; add verification if the project is ever opened beyond that group.
+- The get-tracking endpoint returns the stored email address. Treat `trackingId` links as private and do not share them.
+- A basic API rate limit is still worth adding before sharing the endpoints, to avoid accidental or deliberate abuse.
 
 ## GitHub publishing
 
@@ -95,12 +106,11 @@ git push -u origin main
 
 3. Authenticate with GitHub when prompted (GitHub CLI, Git Credential Manager, or a fine-grained personal access token). Before the first push, review `git status` and `git diff --cached` to confirm no secrets, Lambda zip files, or `node_modules` are staged.
 
-Use a private repository until API design and security are ready for public sharing.
+The repository is intentionally private because this is a personal project.
 
 ## Recommended next steps
 
-1. Publish the current source safely to a private GitHub repository.
-2. Add infrastructure-as-code (AWS SAM is a simple fit) and move the sender address to configuration.
-3. Build verified, double-opt-in email tracking and submit the SES production-access request.
-4. Add tests, API authorization/rate limits, DynamoDB TTL, monitoring, and a scalable active-record processing model.
-
+1. Add `FROM_EMAIL` to the `pnr-update-tracking` Lambda configuration and deploy this small code update.
+2. Request SES production access in `ap-south-1` and test with one friend’s email.
+3. Add a basic API Gateway rate limit before sharing the endpoints.
+4. Keep the architecture as-is unless the group or message volume grows significantly.
