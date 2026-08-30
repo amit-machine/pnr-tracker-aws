@@ -42,7 +42,7 @@ The high-level flow is:
 
 
 EventBridge
-(every 6 hours)
+(every 30 minutes)
       │
       ▼
 pnr-update-tracking
@@ -202,7 +202,7 @@ Request:
 
 Returns an existing tracking request using its tracking ID.
 
-The response only includes fields relevant to the client (`trackingId`, `pnr`, `trainNumber`, `trainName`, `journeyDate`, `lastStatus`, `active`, `notificationStatus`). It intentionally excludes the recipient's email address and the internal SNS topic/subscription ARNs.
+The response only includes fields relevant to the client (`trackingId`, `pnr`, `trainNumber`, `trainName`, `journeyDate`, `lastStatus`, `active`, `notificationStatus`, `stopReason`). It intentionally excludes the recipient's email address and the internal SNS topic/subscription ARNs.
 
 ```text
 GET /track/{trackingId}
@@ -210,7 +210,7 @@ GET /track/{trackingId}
 
 ### `pnr-update-tracking`
 
-Runs periodically through Amazon EventBridge.
+Runs periodically through an EventBridge Scheduler schedule named `pnr-tracker-update-schedule` (`rate(30 minutes)`), which invokes this Lambda directly via a dedicated execution role. This is EventBridge **Scheduler**, a separate AWS API from classic EventBridge **Rules** — worth remembering when checking whether it's still configured, since `aws events list-rules` won't show it.
 
 Responsibilities:
 
@@ -322,7 +322,8 @@ Tracking records contain the information required to:
 - Store the PNR.
 - Store the recipient information.
 - Store the latest PNR status.
-- Determine whether tracking is still active.
+- Determine whether tracking is still active (`active`) and, once stopped, why (`stopReason`).
+- Track consecutive "PNR looks invalid" responses (`invalidCheckCount`) before treating one as final. See [When Tracking Stops](#when-tracking-stops).
 
 ## `PnrEmailIndex` (GSI)
 
@@ -416,7 +417,7 @@ Wait for email confirmation
       ▼
 EventBridge invokes
 pnr-update-tracking
-every 6 hours
+every 30 minutes
       │
       ▼
 Check latest PNR status
@@ -450,6 +451,9 @@ Tracking is stopped when one of the following conditions is reached:
 - All passengers are confirmed.
 - All passengers are cancelled.
 - The journey time has passed.
+- The PNR is no longer recognized by Railkit (`"No PNR data found or invalid PNR number"`), confirmed across 3 consecutive scheduled runs. A single occurrence is not enough on its own — Railkit's upstream source (indianrail.gov.in) can return this same error during a temporary outage or maintenance window, not just for a genuinely expired/invalid PNR, so the record's `invalidCheckCount` must reach the threshold before tracking is actually stopped. Any successful check in between resets the count to zero.
+
+The reason tracking stopped is stored on the record as `stopReason` (`CHART_PREPARED` / `ALL_CONFIRMED` / `ALL_CANCELLED` / `JOURNEY_OVER` / `INVALID_PNR`).
 
 ---
 
