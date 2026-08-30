@@ -93,7 +93,7 @@ export const handler = async (event) => {
 
     const chartStatus = data.chart?.status || null;
 
-    const chartPrepared = chartStatus === "Chart Prepared";
+    const chartPrepared = isChartPrepared(chartStatus);
 
     const journeyDate = convertJourneyDateToIST(data.journey?.dateOfJourney);
 
@@ -262,6 +262,20 @@ async function createNotificationSubscription(trackingId, email) {
     subscriptionArn:
       subscriptionResult.SubscriptionArn || "PendingConfirmation",
   };
+}
+
+// --------------------------------------------------
+// Check whether the railway chart has been prepared
+// --------------------------------------------------
+
+function isChartPrepared(chartStatus) {
+  const chart = String(chartStatus || "").toLowerCase();
+
+  if (!chart) {
+    return false;
+  }
+
+  return chart.includes("prepared") && !chart.includes("not prepared");
 }
 
 // --------------------------------------------------
