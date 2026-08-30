@@ -5,6 +5,8 @@ function TrackingForm({ pnr }) {
   const [email, setEmail] = useState("");
   const [emailTouched, setEmailTouched] = useState(false);
   const [tracking, setTracking] = useState(false);
+  const [trackingId, setTrackingId] = useState("");
+  const [copied, setCopied] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -25,6 +27,7 @@ function TrackingForm({ pnr }) {
 
       console.log("PNR tracking created:", result);
 
+      setTrackingId(result.trackingId);
       setTracking(true);
     } catch (error) {
       console.error("Failed to start PNR tracking:", error);
@@ -41,6 +44,16 @@ function TrackingForm({ pnr }) {
     setEmail(e.target.value);
     setTracking(false);
     setError("");
+  };
+
+  const handleCopyTrackingId = async () => {
+    try {
+      await navigator.clipboard.writeText(trackingId);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (error) {
+      console.error("Failed to copy tracking ID:", error);
+    }
   };
 
   return (
@@ -97,6 +110,22 @@ function TrackingForm({ pnr }) {
             You must confirm the subscription before PNR updates can be
             delivered.
           </p>
+
+          <div className="tracking-id-row">
+            <span>
+              Tracking ID: <code>{trackingId}</code>
+            </span>
+
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={handleCopyTrackingId}
+            >
+              {copied ? "Copied!" : "Copy"}
+            </button>
+          </div>
+
+          <p>Save this ID to check on this tracking request later.</p>
         </div>
       )}
     </section>

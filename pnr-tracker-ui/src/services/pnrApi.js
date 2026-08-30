@@ -44,6 +44,29 @@ export async function getPnrStatus(pnr) {
   return result.data;
 }
 
+export async function getTrackingRequest(trackingId) {
+  const response = await fetch(`${API_BASE_URL}/track/${trackingId}`);
+
+  if (!response.ok) {
+    const message = await getApiError(
+      response,
+      "Failed to fetch tracking request",
+    );
+
+    throw new Error(message);
+  }
+
+  const result = await response.json();
+
+  if (!result.success) {
+    throw new Error(
+      result.message || result.error || "Unable to fetch tracking request",
+    );
+  }
+
+  return result.data;
+}
+
 export async function startPnrTracking(pnr, email) {
   const response = await fetch(`${API_BASE_URL}/track`, {
     method: "POST",
