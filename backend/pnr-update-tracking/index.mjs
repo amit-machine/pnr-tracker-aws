@@ -407,10 +407,14 @@ async function isNotificationConfirmed(record) {
     }),
   );
 
+  // A confirmed subscription's ARN always starts with "arn:". Anything
+  // else - "PendingConfirmation", or "Deleted" after an unsubscribe -
+  // means there's no live subscriber to actually deliver to, even
+  // though "Deleted" alone doesn't equal "PendingConfirmation".
   return (result.Subscriptions || []).some(
     (subscription) =>
       subscription.Endpoint?.toLowerCase() === record.email?.toLowerCase() &&
-      subscription.SubscriptionArn !== "PendingConfirmation",
+      subscription.SubscriptionArn?.startsWith("arn:"),
   );
 }
 
