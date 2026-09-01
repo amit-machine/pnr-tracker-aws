@@ -1,9 +1,8 @@
 import { useState } from "react";
 import { getTrackingRequest } from "../services/pnrApi";
 import { statusLabel, stopReasonLabel } from "../utils/pnrUtils";
-
-const TRACKING_ID_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+import { isValidTrackingId } from "../utils/validation";
+import FormField from "./FormField";
 
 function TrackingLookup() {
   const [trackingId, setTrackingId] = useState("");
@@ -11,13 +10,13 @@ function TrackingLookup() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  const isValidTrackingId = TRACKING_ID_PATTERN.test(trackingId.trim());
+  const trackingIdValid = isValidTrackingId(trackingId);
 
   const handleLookup = async () => {
     setError("");
     setTracking(null);
 
-    if (!isValidTrackingId) {
+    if (!trackingIdValid) {
       setError("Please enter a valid tracking ID.");
       return;
     }
@@ -40,22 +39,18 @@ function TrackingLookup() {
 
   return (
     <div className="tracking-lookup">
-      <div className="form-group">
-        <label htmlFor="trackingId">Tracking ID</label>
-
-        <input
-          id="trackingId"
-          type="text"
-          value={trackingId}
-          onChange={(e) => setTrackingId(e.target.value)}
-          placeholder="Paste the tracking ID you were given"
-        />
-      </div>
+      <FormField
+        id="trackingId"
+        label="Tracking ID"
+        value={trackingId}
+        onChange={(e) => setTrackingId(e.target.value)}
+        placeholder="Paste the tracking ID you were given"
+      />
 
       <button
         className="primary-button"
         onClick={handleLookup}
-        disabled={!isValidTrackingId || loading}
+        disabled={!trackingIdValid || loading}
       >
         {loading ? "Checking..." : "Check Tracking Request"}
       </button>

@@ -6,6 +6,13 @@ The project is intended for personal use and a small group of friends rather tha
 
 ---
 
+## Repository Layout
+
+```text
+backend/     4 Lambda functions (pnr-checker, pnr-track-request, pnr-get-tracking, pnr-update-tracking)
+frontend/    React + Vite app
+```
+
 ## Architecture
 
 The project consists of:
@@ -64,7 +71,7 @@ The frontend is built using React + Vite.
 ## Frontend structure
 
 ```text
-pnr-tracker-ui/
+frontend/
 │
 ├── src/
 │   ├── components/
@@ -501,7 +508,7 @@ Journey completed
 
 ## Frontend
 
-Install dependencies:
+From the `frontend/` directory, install dependencies:
 
 ```powershell
 npm install

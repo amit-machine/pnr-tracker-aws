@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { getPnrStatus } from "../services/pnrApi";
 import { canTrackPnr } from "../utils/pnrUtils";
+import { isValidPnr, isDigitsOnly } from "../utils/validation";
+import FormField from "./FormField";
 import PnrStatus from "./PnrStatus";
 import TrackingForm from "./TrackingForm";
 
@@ -10,12 +12,12 @@ function PnrForm() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  const isValidPnr = /^\d{10}$/.test(pnr);
+  const pnrValid = isValidPnr(pnr);
 
   const handlePnrChange = (e) => {
     const value = e.target.value;
 
-    if (!/^\d*$/.test(value)) {
+    if (!isDigitsOnly(value)) {
       return;
     }
 
@@ -28,7 +30,7 @@ function PnrForm() {
     setError("");
     setStatus(null);
 
-    if (!isValidPnr) {
+    if (!pnrValid) {
       setError("Please enter a valid 10-digit PNR.");
       return;
     }
@@ -54,26 +56,21 @@ function PnrForm() {
       <section className="form-section">
         <h2>Check PNR Status</h2>
 
-        <div className="form-group">
-          <label htmlFor="pnr">PNR Number</label>
-
-          <input
-            id="pnr"
-            type="text"
-            inputMode="numeric"
-            value={pnr}
-            onChange={handlePnrChange}
-            placeholder="Enter your 10-digit PNR"
-            maxLength={10}
-          />
-
-          <div className="input-hint">{pnr.length}/10 digits</div>
-        </div>
+        <FormField
+          id="pnr"
+          label="PNR Number"
+          inputMode="numeric"
+          value={pnr}
+          onChange={handlePnrChange}
+          placeholder="Enter your 10-digit PNR"
+          maxLength={10}
+          hint={`${pnr.length}/10 digits`}
+        />
 
         <button
           className="primary-button"
           onClick={handleGetStatus}
-          disabled={!isValidPnr || loading}
+          disabled={!pnrValid || loading}
         >
           {loading ? "Checking..." : "Get Current Status"}
         </button>

@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { startPnrTracking } from "../services/pnrApi";
+import { isValidEmail } from "../utils/validation";
+import FormField from "./FormField";
 
 function TrackingForm({ pnr }) {
   const [email, setEmail] = useState("");
@@ -10,13 +12,13 @@ function TrackingForm({ pnr }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  const isValidEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  const emailValid = isValidEmail(email);
 
   const handleStartTracking = async () => {
     setEmailTouched(true);
     setError("");
 
-    if (!isValidEmail) {
+    if (!emailValid) {
       return;
     }
 
@@ -46,6 +48,11 @@ function TrackingForm({ pnr }) {
     setError("");
   };
 
+  const fieldError =
+    emailTouched && email && !emailValid
+      ? "Please enter a valid email address."
+      : error || null;
+
   const handleCopyTrackingId = async () => {
     try {
       await navigator.clipboard.writeText(trackingId);
@@ -69,34 +76,35 @@ function TrackingForm({ pnr }) {
       </div>
 
       {!tracking ? (
-        <div className="tracking-form">
-          <div className="email-field">
-            <input
+        <>
+          <div className="tracking-form">
+            <FormField
               id="email"
               type="email"
               value={email}
               onChange={handleEmailChange}
               onBlur={() => setEmailTouched(true)}
               placeholder="Enter your email address"
-              aria-invalid={emailTouched && !isValidEmail}
+              invalid={emailTouched && !emailValid}
               disabled={loading}
+              error={fieldError}
+              className="email-field"
             />
 
-            {emailTouched && email && !isValidEmail && (
-              <p className="field-error">Please enter a valid email address.</p>
-            )}
-
-            {error && <p className="field-error">{error}</p>}
+            <button
+              className="primary-button"
+              onClick={handleStartTracking}
+              disabled={!emailValid || loading}
+            >
+              {loading ? "Starting..." : "Track PNR"}
+            </button>
           </div>
 
-          <button
-            className="primary-button"
-            onClick={handleStartTracking}
-            disabled={!isValidEmail || loading}
-          >
-            {loading ? "Starting..." : "Track PNR"}
-          </button>
-        </div>
+          <p className="privacy-note">
+            Your email is only used to send PNR status update notifications
+            for this tracking request.
+          </p>
+        </>
       ) : (
         <div className="tracking-success">
           ✓ Tracking request created for <strong>{email}</strong>

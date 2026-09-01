@@ -144,6 +144,12 @@ body {
   font-size: 13px;
 }
 
+.privacy-note {
+  margin-top: 10px;
+  color: var(--light-text);
+  font-size: 13px;
+}
+
 /* =========================
    Buttons
 ========================= */

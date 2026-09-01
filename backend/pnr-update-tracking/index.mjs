@@ -1,5 +1,6 @@
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import {
+  DeleteTopicCommand,
   ListSubscriptionsByTopicCommand,
   PublishCommand,
   SNSClient,
@@ -371,6 +372,29 @@ async function publishStatusNotification(record, notification) {
   );
 }
 
+// --------------------------------------------------
+// Delete the per-tracking SNS topic once tracking ends.
+// Deleting a topic cascades to its subscription automatically,
+// so there's no separate Unsubscribe call needed.
+// --------------------------------------------------
+
+async function deleteNotificationTopic(record) {
+  if (!record.snsTopicArn) {
+    return;
+  }
+
+  try {
+    await sns.send(new DeleteTopicCommand({ TopicArn: record.snsTopicArn }));
+
+    console.log(`Deleted SNS topic for tracking ${record.trackingId}`);
+  } catch (error) {
+    console.warn(
+      `Failed to delete SNS topic for tracking ${record.trackingId}:`,
+      error,
+    );
+  }
+}
+
 async function isNotificationConfirmed(record) {
   if (!record.snsTopicArn) {
     // Records created before the SNS migration remain processable.
@@ -601,6 +625,7 @@ export const handler = async () => {
             );
 
             await publishStatusNotification(record, notification);
+            await deleteNotificationTopic(record);
 
             invalidCount++;
             finalCount++;
@@ -785,6 +810,10 @@ export const handler = async () => {
           // ------------------------------------------------
 
           await publishStatusNotification(record, notification);
+
+          if (isFinal) {
+            await deleteNotificationTopic(record);
+          }
         } else {
           // A successful check with no status change still means
           // Railkit recognizes the PNR again - clear any invalid-check
