@@ -2,6 +2,7 @@ name: Deploy Lambdas
 
 # Deploys only the Lambda functions whose backend/ folder changed.
 # Run it manually (Actions tab -> Run workflow) to deploy all five.
+# AWS access: OIDC role github-actions-pnr-deploy (see infra/).
 on:
   push:
     branches: [main]

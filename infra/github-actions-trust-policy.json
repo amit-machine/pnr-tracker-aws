@@ -10,7 +10,7 @@
       "Condition": {
         "StringEquals": {
           "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
-          "token.actions.githubusercontent.com:sub": "repo:amit-machine/pnr-tracker-aws:ref:refs/heads/main"
+          "token.actions.githubusercontent.com:sub": "repo:amit-machine@234037959/pnr-tracker-aws@1351294652:ref:refs/heads/main"
         }
       }
     }

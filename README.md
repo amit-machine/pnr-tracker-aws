@@ -576,7 +576,7 @@ Pushing to `main` deploys the Lambdas automatically through `.github/workflows/d
 - Only the functions whose `backend/<folder>/` changed are deployed (editing the workflow file, or running it manually from the Actions tab, deploys all five).
 - For each one the workflow runs `npm ci --omit=dev`, zips the folder and calls `aws lambda update-function-code`.
 - Folder → function: `pnr-checker` → `pnr-status-checker`; the other four use their folder name.
-- Authentication uses GitHub OIDC (no stored AWS keys): the workflow assumes the IAM role `github-actions-pnr-deploy`, which is limited to `lambda:UpdateFunctionCode` / `GetFunctionConfiguration` on these five functions and can only be assumed from this repository's `main` branch. The role's trust and permission policies are in `infra/github-actions-*.json`.
+- Authentication uses GitHub OIDC (no stored AWS keys): the workflow assumes the IAM role `github-actions-pnr-deploy`, which is limited to `lambda:UpdateFunctionCode` / `GetFunctionConfiguration` on these five functions and can only be assumed from this repository's `main` branch (the trust policy matches GitHub's ID-suffixed subject claim, `repo:<owner>@<ownerId>/<repo>@<repoId>:ref:refs/heads/main`). The role's trust and permission policies are in `infra/github-actions-*.json`.
 - It deploys code only. Lambda configuration (environment variables, IAM roles, API Gateway routes, DynamoDB) is still changed manually.
 - Each folder needs a committed `package-lock.json` for `npm ci`.
 
