@@ -75,6 +75,8 @@ frontend/
 │
 ├── src/
 │   ├── components/
+│   │   ├── EmailTrackingList.jsx
+│   │   ├── FormField.jsx
 │   │   ├── PassengerCard.jsx
 │   │   ├── PnrForm.jsx
 │   │   ├── PnrStatus.jsx
@@ -149,6 +151,15 @@ Responsible for:
 - Accepting an existing tracking ID.
 - Retrieving that tracking request.
 - Displaying its current PNR, train, chart, and passenger status.
+
+#### `EmailTrackingList.jsx`
+
+Responsible for:
+
+- Accepting an email address and validating it.
+- Calling `GET /trackings?email=` (via `listTrackingsByEmail`).
+- Listing every tracking request for that email, newest first, with its active/stopped state, stop reason, chart status and passenger statuses.
+- Showing an empty state when the email has no tracking requests.
 
 #### `services/pnrApi.js`
 
@@ -545,6 +556,29 @@ npm run dev
 ```
 
 The application will be available at the local Vite development URL.
+
+---
+
+# Deployment
+
+The frontend is hosted on AWS Amplify (app `pnr-tracker-ui`, `ap-south-1`, branch `main`). The only frontend configuration is `VITE_API_BASE_URL`, which Vite bakes in at build time.
+
+The Lambda functions are deployed manually (there is no IaC); after changing one, upload its new code to the matching Lambda function.
+
+### Deploying from GitHub
+
+The repo-root `amplify.yml` is a monorepo build spec (`appRoot: frontend`, `npm ci` then `npm run build`, output `dist`). Create an Amplify app from this GitHub repo, branch `main`, set the `VITE_API_BASE_URL` environment variable, and every push to `main` redeploys. The site's URL must also be listed in the API Gateway CORS `AllowOrigins`.
+
+### Manual frontend deploy (while the app is not connected to GitHub)
+
+```powershell
+cd frontend
+npm run build
+# zip the contents of dist/, then:
+aws amplify create-deployment --app-id <appId> --branch-name main --region ap-south-1
+# upload the zip to the returned zipUploadUrl, then:
+aws amplify start-deployment --app-id <appId> --branch-name main --job-id <jobId> --region ap-south-1
+```
 
 ---
 
