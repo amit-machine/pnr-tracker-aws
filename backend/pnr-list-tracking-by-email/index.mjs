@@ -6,6 +6,7 @@ const ddb = DynamoDBDocumentClient.from(
   new DynamoDBClient({ region: process.env.AWS_REGION || "ap-south-1" })
 );
 
+const PNR_RE = /^\d{10}$/;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 // CORS is handled by the API Gateway HTTP API configuration.
 const headers = { "Content-Type": "application/json" };
@@ -24,8 +25,9 @@ const toPublic = (i) => ({
   trainNumber: i.trainNumber,
   trainName: i.trainName,
   journeyDate: i.journeyDate,
+  source: i.source,
+  destination: i.destination,
   active: i.active,
-  verified: i.verified,
   stopReason: i.stopReason,
   lastStatus: i.lastStatus,
   createdAt: i.createdAt,
@@ -48,7 +50,14 @@ export const handler = async (event) => {
     raw = event?.queryStringParameters?.email;
   }
   const email = typeof raw === "string" ? raw.trim().toLowerCase() : "";
-  if (!EMAIL_RE.test(email)) return respond(400, { success: false, message: "A valid email is required" });
+
+  // Without a verified identity the caller may search by ?email= or ?pnr=.
+  const rawPnr = !claims?.email ? event?.queryStringParameters?.pnr : undefined;
+  const pnr = typeof rawPnr === "string" ? rawPnr.trim() : "";
+  const byPnr = !email && PNR_RE.test(pnr);
+  if (!byPnr && !EMAIL_RE.test(email)) {
+    return respond(400, { success: false, message: "A valid email or 10-digit PNR is required" });
+  }
 
   try {
     // trackingKey is "<pnr>#<email>", so the GSI can't be queried by email alone.
@@ -59,8 +68,9 @@ export const handler = async (event) => {
       const out = await ddb.send(
         new ScanCommand({
           TableName: TABLE,
-          FilterExpression: "email = :e",
-          ExpressionAttributeValues: { ":e": email },
+          // Only active trackings are returned; stopped ones are of no use here.
+          FilterExpression: (byPnr ? "pnr" : "email") + " = :k AND active = :t",
+          ExpressionAttributeValues: { ":k": byPnr ? pnr : email, ":t": true },
           ExclusiveStartKey,
         })
       );
@@ -69,7 +79,7 @@ export const handler = async (event) => {
     } while (ExclusiveStartKey);
 
     items.sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
-    return respond(200, { success: true, data: { email, count: items.length, items: items.map(toPublic) } });
+    return respond(200, { success: true, data: { email: byPnr ? undefined : email, pnr: byPnr ? pnr : undefined, count: items.length, items: items.map(toPublic) } });
   } catch (err) {
     console.error("list-tracking-by-email failed", err);
     return respond(500, { success: false, message: "Internal error" });

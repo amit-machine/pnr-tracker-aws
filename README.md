@@ -75,13 +75,13 @@ frontend/
 │
 ├── src/
 │   ├── components/
-│   │   ├── EmailTrackingList.jsx
 │   │   ├── FormField.jsx
 │   │   ├── PassengerCard.jsx
 │   │   ├── PnrForm.jsx
 │   │   ├── PnrStatus.jsx
 │   │   ├── TrackingForm.jsx
-│   │   └── TrackingLookup.jsx
+│   │   ├── TrackingLookup.jsx
+│   │   └── TrackingResult.jsx
 │   │
 │   ├── services/
 │   │   └── pnrApi.js
@@ -148,18 +148,12 @@ Responsible for:
 
 Responsible for:
 
-- Accepting an existing tracking ID.
-- Retrieving that tracking request.
-- Displaying its current PNR, train, chart, and passenger status.
+- Letting the user search by **Email**, **PNR** or **Tracking ID** (a mode switch above one input).
+- Email/PNR search calls `GET /trackings` and lists the **active** trackings found; Tracking ID calls `GET /track/{trackingId}` and shows that one request (including why it stopped, if it did).
 
-#### `EmailTrackingList.jsx`
+#### `TrackingResult.jsx`
 
-Responsible for:
-
-- Accepting an email address and validating it.
-- Calling `GET /trackings?email=` (via `listTrackingsByEmail`).
-- Listing every tracking request for that email, newest first, with its active/stopped state, stop reason, chart status and passenger statuses.
-- Showing an empty state when the email has no tracking requests.
+Renders one tracking request: PNR, train number and name, source → destination, departure date and time (IST), chart status and passengers.
 
 #### `services/pnrApi.js`
 
@@ -220,7 +214,7 @@ Request:
 
 Returns an existing tracking request using its tracking ID.
 
-The response only includes fields relevant to the client (`trackingId`, `pnr`, `trainNumber`, `trainName`, `journeyDate`, `lastStatus`, `active`, `notificationStatus`, `stopReason`). It intentionally excludes the recipient's email address and the internal SNS topic/subscription ARNs.
+The response only includes fields relevant to the client (`trackingId`, `pnr`, `trainNumber`, `trainName`, `source`, `destination`, `journeyDate`, `lastStatus`, `active`, `notificationStatus`, `stopReason`). It intentionally excludes the recipient's email address and the internal SNS topic/subscription ARNs.
 
 ```text
 GET /track/{trackingId}
@@ -228,9 +222,9 @@ GET /track/{trackingId}
 
 ### `pnr-list-tracking-by-email`
 
-Returns every tracking request for an email address, newest first.
+Returns the **active** tracking requests for an email address or a PNR, newest first.
 
-- Route: `GET /trackings?email=<email>`
+- Route: `GET /trackings?email=<email>` or `GET /trackings?pnr=<10-digit PNR>`
 - Reads `pnr-tracking` with a filtered `Scan` on `email` (the `PnrEmailIndex` GSI is keyed on `<pnr>#<email>` and cannot be queried by email alone). Fine for a small table; add a GSI on `email` if it grows.
 - Response: `{ "success": true, "data": { "email", "count", "items": [...] } }`. SNS ARNs and other internals are not returned.
 - Needs `dynamodb:Scan` on the `pnr-tracking` table.
@@ -266,7 +260,7 @@ The current API Gateway routes are:
 | `GET`  | `/pnr/{pnr}`          | `pnr-checker`       | Check current PNR status    |
 | `POST` | `/track`              | `pnr-track-request` | Start tracking a PNR        |
 | `GET`  | `/track/{trackingId}` | `pnr-get-tracking`  | Retrieve a tracking request |
-| `GET`  | `/trackings?email=`   | `pnr-list-tracking-by-email` | List all tracking requests for an email |
+| `GET`  | `/trackings?email=` or `?pnr=` | `pnr-list-tracking-by-email` | List active tracking requests for an email or PNR |
 
 ### Base URL
 

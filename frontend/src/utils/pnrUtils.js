@@ -141,3 +141,26 @@ function parseRailkitDate(value) {
 
   return new Date(utcMilliseconds);
 }
+
+// --------------------------------------------------
+// Journey departure date and time in Indian time
+// --------------------------------------------------
+
+export function formatJourneyDateTime(isoDate) {
+  const date = new Date(isoDate);
+
+  if (!isoDate || Number.isNaN(date.getTime())) {
+    return null;
+  }
+
+  return `${new Intl.DateTimeFormat("en-IN", {
+    timeZone: "Asia/Kolkata",
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  }).format(date)} IST`;
+}

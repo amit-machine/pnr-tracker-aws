@@ -96,9 +96,10 @@ export async function startPnrTracking(pnr, email) {
   return result;
 }
 
-export async function listTrackingsByEmail(email) {
+// Pass { email } or { pnr }.
+export async function listTrackings(query) {
   const response = await fetch(
-    `${API_BASE_URL}/trackings?email=${encodeURIComponent(email)}`,
+    `${API_BASE_URL}/trackings?${new URLSearchParams(query)}`,
   );
 
   if (!response.ok) {

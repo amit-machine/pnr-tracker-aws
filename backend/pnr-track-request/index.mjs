@@ -170,6 +170,8 @@ export const handler = async (event) => {
 
       trainNumber: data.train?.number || null,
       trainName: data.train?.name || null,
+      source: data.journey?.source?.name || null,
+      destination: data.journey?.destination?.name || null,
 
       journeyDate,
 
