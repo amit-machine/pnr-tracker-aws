@@ -7,8 +7,19 @@ const TABS = [
   { id: "trackings", label: "My trackings" },
 ];
 
+// The active tab lives in the URL hash (#trackings) so a reload stays on it.
+function tabFromHash() {
+  const id = window.location.hash.slice(1);
+  return TABS.some((item) => item.id === id) ? id : "status";
+}
+
 function App() {
-  const [tab, setTab] = useState("status");
+  const [tab, setTab] = useState(tabFromHash);
+
+  const selectTab = (id) => {
+    setTab(id);
+    window.history.replaceState(null, "", `#${id}`);
+  };
 
   return (
     <>
@@ -28,7 +39,7 @@ function App() {
               type="button"
               className={`tab ${tab === item.id ? "active" : ""}`}
               aria-current={tab === item.id ? "page" : undefined}
-              onClick={() => setTab(item.id)}
+              onClick={() => selectTab(item.id)}
             >
               {item.label}
             </button>
