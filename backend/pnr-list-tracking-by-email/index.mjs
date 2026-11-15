@@ -28,6 +28,8 @@ const toPublic = (i) => ({
   source: i.source,
   destination: i.destination,
   arrivalDate: i.arrivalDate,
+  travelClass: i.travelClass,
+  quota: i.quota,
   active: i.active,
   stopReason: i.stopReason,
   lastStatus: i.lastStatus,

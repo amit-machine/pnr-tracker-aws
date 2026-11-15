@@ -173,6 +173,8 @@ export const handler = async (event) => {
       source: data.journey?.source?.name || null,
       destination: data.journey?.destination?.name || null,
       arrivalDate: convertJourneyDateToIST(data.journey?.arrivalDate),
+      travelClass: data.journey?.class || null,
+      quota: data.journey?.quota || null,
 
       journeyDate,
 

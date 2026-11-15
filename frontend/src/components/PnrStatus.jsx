@@ -1,11 +1,11 @@
-import { parseRailkitDate } from "../utils/pnrUtils";
+import { classLabel, parseRailkitDate } from "../utils/pnrUtils";
 import TrainCard from "./TrainCard";
 
 function PnrStatus({ status, children }) {
   const journey = status.journey || {};
 
   const chips = [
-    journey.class && { label: "Class", value: journey.class },
+    journey.class && { label: "Class", value: classLabel(journey.class) },
     journey.quota && { label: "Quota", value: journey.quota },
     journey.distance && { label: "Distance", value: `${journey.distance} km` },
   ].filter(Boolean);

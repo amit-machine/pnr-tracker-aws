@@ -154,7 +154,7 @@ Responsible for:
 
 #### `TrainCard.jsx`
 
-The shared card used for every train (one card per train, whether it comes from a live PNR check or from a saved tracking request). It shows the PNR, train name and number, a departure → arrival timeline (times, dates, stations and journey duration, all in IST), class/quota/distance and chart chips, and the passenger list with colour-coded status pills (green confirmed, amber RAC, red waiting list, grey cancelled).
+The shared card used for every train (one card per train, whether it comes from a live PNR check or from a saved tracking request). It shows the PNR, train name and number, a departure → arrival timeline (times, dates, stations and journey duration, all in IST), class (for example Sleeper (SL) or AC 3 Tier (3A)), quota, distance and chart chips, and the passenger list with colour-coded status pills (green confirmed, amber RAC, red waiting list, grey cancelled).
 
 #### `TrackingResult.jsx`
 
@@ -219,7 +219,7 @@ Request:
 
 Returns an existing tracking request using its tracking ID.
 
-The response only includes fields relevant to the client (`trackingId`, `pnr`, `trainNumber`, `trainName`, `source`, `destination`, `journeyDate`, `arrivalDate`, `lastStatus`, `active`, `notificationStatus`, `stopReason`). It intentionally excludes the recipient's email address and the internal SNS topic/subscription ARNs.
+The response only includes fields relevant to the client (`trackingId`, `pnr`, `trainNumber`, `trainName`, `source`, `destination`, `journeyDate`, `arrivalDate`, `travelClass`, `quota`, `lastStatus`, `active`, `notificationStatus`, `stopReason`). It intentionally excludes the recipient's email address and the internal SNS topic/subscription ARNs.
 
 ```text
 GET /track/{trackingId}

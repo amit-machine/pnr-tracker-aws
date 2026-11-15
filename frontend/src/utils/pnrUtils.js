@@ -193,6 +193,36 @@ export function formatDuration(from, to) {
 }
 
 // --------------------------------------------------
+// Human-readable travel class (SL -> "Sleeper (SL)")
+// --------------------------------------------------
+
+const CLASS_NAMES = {
+  SL: "Sleeper",
+  "1A": "AC First Class",
+  "2A": "AC 2 Tier",
+  "3A": "AC 3 Tier",
+  "3E": "AC 3 Economy",
+  CC: "AC Chair Car",
+  EC: "Executive Chair Car",
+  EV: "Vistadome Executive",
+  VC: "Vistadome Chair Car",
+  VS: "Vistadome Sleeper",
+  "2S": "Second Sitting",
+  FC: "First Class",
+  EA: "Anubhuti Class",
+};
+
+export function classLabel(code) {
+  const key = String(code || "").trim().toUpperCase();
+
+  if (!key) {
+    return null;
+  }
+
+  return CLASS_NAMES[key] ? `${CLASS_NAMES[key]} (${key})` : key;
+}
+
+// --------------------------------------------------
 // Colour tone for a passenger status
 // --------------------------------------------------
 
