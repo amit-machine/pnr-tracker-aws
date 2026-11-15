@@ -166,7 +166,6 @@ export const handler = async (event) => {
       trackingKey,
 
       active: true,
-      verified: false,
 
       trainNumber: data.train?.number || null,
       trainName: data.train?.name || null,

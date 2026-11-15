@@ -27,8 +27,6 @@ function TrackingForm({ pnr }) {
 
       const result = await startPnrTracking(pnr, email);
 
-      console.log("PNR tracking created:", result);
-
       setTrackingId(result.trackingId);
       setTracking(true);
     } catch (error) {

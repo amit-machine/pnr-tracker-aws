@@ -1,745 +1,320 @@
 # PNR Tracker
 
-PNR Tracker is a lightweight personal project for checking Indian Railways PNR status and receiving email notifications when a booking status changes.
+PNR Tracker is a lightweight personal project for checking Indian Railways PNR status and getting an email when a booking's status changes.
 
-The project is intended for personal use and a small group of friends rather than as a public or production-scale service.
+It is meant for personal use and a small group of friends, not as a public or production-scale service.
+
+**Live site:** https://main.d321bth21mrx57.amplifyapp.com
 
 ---
 
-## Repository Layout
+## Repository layout
 
 ```text
-backend/     5 Lambda functions (pnr-checker, pnr-track-request, pnr-get-tracking, pnr-update-tracking, pnr-list-tracking-by-email)
-frontend/    React + Vite app
+backend/               5 Lambda functions, one folder each
+frontend/              React + Vite app
+infra/                 IAM policy files for the GitHub Actions deploy role
+.github/workflows/     deploy-lambdas.yml - deploys changed Lambdas on push
+amplify.yml            Amplify build spec for the frontend (monorepo)
 ```
 
 ## Architecture
 
-The project consists of:
-
-- React + Vite frontend
-- AWS API Gateway
-- AWS Lambda
-- DynamoDB
-- Amazon SNS
-- Amazon EventBridge
-- Railkit API for PNR status
-
-The high-level flow is:
+- React + Vite frontend, hosted on AWS Amplify
+- Amazon API Gateway (HTTP API) in front of five AWS Lambda functions
+- DynamoDB table `pnr-tracking`
+- Amazon SNS for email notifications (one topic per tracking request)
+- Amazon EventBridge **Scheduler** to run the update Lambda every 30 minutes
+- Railkit API as the source of PNR data
 
 ```text
-                              ┌──────────────────┐
-                              │   React Client   │
-                              └─────────┬────────┘
-                                        │
-              ┌─────────────────────────┼─────────────────────────┐
-              │                         │                         │
-        GET /pnr/{pnr}             POST /track          GET /track/{trackingId}
-              │                         │                         │
-              ▼                         ▼                         ▼
-        pnr-checker             pnr-track-request           pnr-get-tracking
-              │                         │                         │
-              ▼                         ├──> Railkit               ▼
-           Railkit                      │                     DynamoDB
-                                         ▼
-                                    DynamoDB
-                                         │
-                                         ▼
-                                        SNS
+                         ┌──────────────────┐
+                         │   React client   │
+                         └────────┬─────────┘
+                                  │
+     ┌───────────────┬────────────┼──────────────┬─────────────────────┐
+     │               │            │              │                     │
+GET /pnr/{pnr}  POST /track  GET /track/{id}  GET /trackings?email|pnr
+     │               │            │              │
+     ▼               ▼            ▼              ▼
+ pnr-checker   pnr-track-    pnr-get-       pnr-list-tracking-
+     │          request       tracking        by-email
+     ▼           │  │            │              │
+  Railkit        │  └─> Railkit  └──────┬───────┘
+                 ▼                      ▼
+        DynamoDB + SNS              DynamoDB
 
 
-EventBridge
-(every 30 minutes)
+EventBridge Scheduler (every 30 minutes)
       │
       ▼
-pnr-update-tracking
+pnr-update-tracking ──> Railkit
       │
-      ├──> Railkit
       ├──> DynamoDB
-      └──> Amazon SNS
-                 │
-                 ▼
-              Recipient
+      └──> SNS ──> recipient's email
 ```
 
 ---
 
 # Frontend
 
-The frontend is built using React + Vite.
+React 19 + Vite. The UI has two tabs:
 
-## Frontend structure
+- **Check PNR** – look up a PNR and optionally start email tracking for it.
+- **My trackings** – find your active tracking requests by **email**, **PNR** or **tracking ID**.
+
+Both tabs stay mounted (the inactive one is just hidden), so what you typed and any results survive switching tabs.
+
+## Structure
 
 ```text
 frontend/
-│
+├── public/favicon.svg
 ├── src/
 │   ├── components/
-│   │   ├── FormField.jsx
-│   │   ├── PassengerCard.jsx
-│   │   ├── PnrForm.jsx
-│   │   ├── PnrStatus.jsx
-│   │   ├── TrackingForm.jsx
-│   │   ├── TrackingLookup.jsx
-│   │   ├── TrackingResult.jsx
-│   │   └── TrainCard.jsx
-│   │
-│   ├── services/
-│   │   └── pnrApi.js
-│   │
+│   │   ├── FormField.jsx       labelled input with hint/error
+│   │   ├── PnrForm.jsx         "Check PNR" tab
+│   │   ├── PnrStatus.jsx       live PNR result -> TrainCard
+│   │   ├── TrackingForm.jsx    start tracking (email) + tracking ID copy
+│   │   ├── TrackingLookup.jsx  "My trackings" tab
+│   │   ├── TrackingResult.jsx  saved tracking -> TrainCard
+│   │   ├── TrainCard.jsx       the one-card-per-train UI
+│   │   └── PassengerCard.jsx   one passenger row
+│   ├── services/pnrApi.js      all HTTP calls
 │   ├── utils/
-│   │   └── pnrUtils.js
-│   │
-│   ├── App.jsx
-│   ├── index.css
+│   │   ├── pnrUtils.js         eligibility, labels, IST date/time helpers
+│   │   └── validation.js       PNR / email / tracking-ID validation
+│   ├── App.jsx                 header + tabs
+│   ├── index.css               all styling
 │   └── main.jsx
-│
-├── public/
 ├── .env.example
-├── .env.local
-├── .gitignore
 ├── eslint.config.js
 ├── index.html
 ├── package.json
-├── package-lock.json
 └── vite.config.js
 ```
 
-The frontend is intentionally split into smaller components instead of keeping the entire UI inside one large component.
+## Components
 
-### Components
+- **`TrainCard`** – the shared card shown for every train, whether it comes from a live PNR check or from a saved tracking. It shows the PNR, train name and number, a departure → arrival timeline (times, dates, stations, journey duration, all in IST), chips for class (e.g. `Sleeper (SL)`, `AC 3 Tier (3A)`), quota, distance and chart status, and the passengers with colour-coded status pills (green confirmed, amber RAC, red waiting list, grey cancelled).
+- **`PnrForm`** – validates a 10-digit PNR, calls `GET /pnr/{pnr}`, renders `PnrStatus`, and shows `TrackingForm` only if the PNR can still be tracked.
+- **`TrackingForm`** – validates an email, calls `POST /track`, and shows the tracking ID with a copy button.
+- **`TrackingLookup`** – a mode switch (Email / PNR / Tracking ID) over one input. Email and PNR search call `GET /trackings` and list **active** trackings only; Tracking ID calls `GET /track/{id}` and shows that request, including why it stopped if it did.
 
-#### `PnrForm.jsx`
+## Shared logic (`utils/pnrUtils.js`)
 
-Responsible for:
-
-- Accepting the 10-digit PNR.
-- Validating the PNR.
-- Calling the PNR status API.
-- Handling loading and error states.
-- Displaying the status and tracking sections.
-
-#### `PnrStatus.jsx`
-
-Responsible for displaying:
-
-- PNR number.
-- Chart status.
-- Train information.
-- Journey details.
-- Class and quota.
-- Distance.
-- Passenger information.
-
-#### `PassengerCard.jsx`
-
-Responsible for displaying information for an individual passenger, including a human-readable status label (for example "Waiting List" instead of the raw `WL` code).
-
-#### `TrackingForm.jsx`
-
-Responsible for:
-
-- Accepting an email address.
-- Validating the email.
-- Starting PNR tracking.
-- Displaying tracking confirmation.
-- Displaying the tracking ID with a copy-to-clipboard button so it can be used later to check on the request.
-
-#### `TrackingLookup.jsx`
-
-Responsible for:
-
-- Letting the user search by **Email**, **PNR** or **Tracking ID** (a mode switch above one input).
-- Email/PNR search calls `GET /trackings` and lists the **active** trackings found; Tracking ID calls `GET /track/{trackingId}` and shows that one request (including why it stopped, if it did).
-
-#### `TrainCard.jsx`
-
-The shared card used for every train (one card per train, whether it comes from a live PNR check or from a saved tracking request). It shows the PNR, train name and number, a departure → arrival timeline (times, dates, stations and journey duration, all in IST), class (for example Sleeper (SL) or AC 3 Tier (3A)), quota, distance and chart chips, and the passenger list with colour-coded status pills (green confirmed, amber RAC, red waiting list, grey cancelled).
-
-#### `TrackingResult.jsx`
-
-Maps a tracking request from the API onto a `TrainCard` and adds the tracking-active/stopped badge and stop reason.
-
-#### `services/pnrApi.js`
-
-Contains API-related functionality so that HTTP calls are kept separate from UI components.
-
-#### `utils/pnrUtils.js`
-
-Contains shared frontend logic that doesn't belong in a component:
-
-- `canTrackPnr` — determines whether a PNR is still eligible for tracking (chart not yet prepared, journey not yet passed).
-- `isChartPrepared` — the same lenient chart-status check used by the backend, so the frontend and backend agree on eligibility.
-- `statusLabel` — maps raw passenger status codes (`WL`, `CNF`, `RAC`, `CAN`) to human-readable labels.
+- `canTrackPnr` / `isChartPrepared` – eligibility (chart not prepared, journey not passed). Same lenient chart check as the backend.
+- `statusLabel`, `statusTone` – passenger status → readable label / colour.
+- `classLabel` – class code → name (`SL` → `Sleeper (SL)`).
+- `formatTime`, `formatDay`, `formatDuration` – IST formatting for the timeline.
+- `parseRailkitDate` – parses Railkit's `"Sep 2, 2026 3:30:00 PM"` strings (IST).
 
 ---
 
 # Backend
 
-The backend uses AWS Lambda functions behind API Gateway.
+Five Lambda functions behind one API Gateway HTTP API, in `ap-south-1`.
 
-## Lambda functions
+| Method | Route | Lambda (deployed name) | Purpose |
+| ------ | ----- | ---------------------- | ------- |
+| `GET`  | `/pnr/{pnr}` | `pnr-checker` (`pnr-status-checker`) | Current PNR status from Railkit |
+| `POST` | `/track` | `pnr-track-request` | Start tracking a PNR for an email |
+| `GET`  | `/track/{trackingId}` | `pnr-get-tracking` | Get one tracking request |
+| `GET`  | `/trackings?email=…` or `?pnr=…` | `pnr-list-tracking-by-email` | List **active** trackings for an email or PNR, newest first |
+| –      | (EventBridge Scheduler) | `pnr-update-tracking` | Re-check every active PNR and notify on change |
 
-### `pnr-checker`
+Base URL: `https://wqhly6ibz1.execute-api.ap-south-1.amazonaws.com`
 
-Checks the current status of a 10-digit PNR.
+## `pnr-track-request`
 
-```text
-GET /pnr/{pnr}
-```
+`POST /track` with `{ "pnr": "2842762869", "email": "you@example.com" }`.
 
-### `pnr-track-request`
+- Validates the request.
+- Rejects with `409` (and the existing `trackingId`) if this PNR/email pair is already actively tracked.
+- Checks the PNR now; rejects it if the chart is already prepared or the journey has passed.
+- Creates an SNS topic, subscribes the email, and stores the record in DynamoDB.
 
-Starts tracking a PNR for an email address.
+## `pnr-get-tracking` and `pnr-list-tracking-by-email`
 
-Responsibilities:
+Both return only client-safe fields: `trackingId`, `pnr`, `trainNumber`, `trainName`, `source`, `destination`, `journeyDate` (departure), `arrivalDate`, `travelClass`, `quota`, `lastStatus`, `active`, `stopReason` (plus `notificationStatus` for get, `createdAt`/`updatedAt`/`email` for list). SNS ARNs and other internals are never returned.
 
-- Validate the request.
-- Reject the request if this PNR/email pair is already being actively tracked.
-- Check the current PNR status.
-- Reject the request if the railway chart has already been prepared or the journey has already passed.
-- Create an SNS topic.
-- Subscribe the email address to the topic.
-- Store the initial tracking information in DynamoDB.
+The list Lambda runs a filtered `Scan` (`email = :k AND active = true`, or `pnr = :k …`) because the `PnrEmailIndex` GSI is keyed on `pnr#email` and cannot be queried by email alone. That is fine for a small table; add a GSI on `email` if it grows.
 
-```text
-POST /track
-```
+> **Known gap – authentication:** `GET /trackings` (and the other routes) are **unauthenticated**. Anyone who knows an email or PNR can list its trackings. This is accepted for a personal project. If it needs fixing: add a Cognito user pool + JWT authorizer on the route, set `REQUIRE_AUTH=true` on the Lambda (it already prefers a verified `email` claim and then ignores `?email=`/`?pnr=`), and add sign-in to the frontend.
 
-Request:
+## `pnr-update-tracking`
 
-```json
-{
-  "pnr": "2842762869",
-  "email": "your-email@example.com"
-}
-```
+Invoked every 30 minutes by an EventBridge **Scheduler** schedule named `pnr-tracker-update-schedule` (`rate(30 minutes)`, Asia/Calcutta) through a dedicated execution role. Note this is EventBridge *Scheduler*, a separate API from classic EventBridge *Rules*: `aws scheduler list-schedules` shows it, `aws events list-rules` does not.
 
-### `pnr-get-tracking`
+For each active tracking it:
 
-Returns an existing tracking request using its tracking ID.
+1. Fetches the latest status from Railkit.
+2. Compares it with the stored `lastStatus` (passengers matched by serial number).
+3. Saves the new status **first**, then emails on change. Saving before sending means a crash between the two can skip a notification but never send a duplicate.
+4. Stops tracking when a final state is reached (see below) and deletes that request's SNS topic.
 
-The response only includes fields relevant to the client (`trackingId`, `pnr`, `trainNumber`, `trainName`, `source`, `destination`, `journeyDate`, `arrivalDate`, `travelClass`, `quota`, `lastStatus`, `active`, `notificationStatus`, `stopReason`). It intentionally excludes the recipient's email address and the internal SNS topic/subscription ARNs.
+## When tracking stops
 
-```text
-GET /track/{trackingId}
-```
+Tracking stops when any of these is reached, and the reason is stored as `stopReason`:
 
-### `pnr-list-tracking-by-email`
+| `stopReason` | Meaning |
+| ------------ | ------- |
+| `CHART_PREPARED` | Railway chart prepared |
+| `ALL_CONFIRMED` | All passengers confirmed |
+| `ALL_CANCELLED` | All passengers cancelled |
+| `JOURNEY_OVER` | Departure time has passed |
+| `INVALID_PNR` | Railkit reports the PNR as not found on **3 consecutive** scheduled runs |
 
-Returns the **active** tracking requests for an email address or a PNR, newest first.
+A single "invalid PNR" response is not enough: Railkit's upstream source can return the same error during an outage or maintenance window. `invalidCheckCount` must reach the threshold, and any successful check in between resets it to zero.
 
-- Route: `GET /trackings?email=<email>` or `GET /trackings?pnr=<10-digit PNR>`
-- Reads `pnr-tracking` with a filtered `Scan` on `email` (the `PnrEmailIndex` GSI is keyed on `<pnr>#<email>` and cannot be queried by email alone). Fine for a small table; add a GSI on `email` if it grows.
-- Response: `{ "success": true, "data": { "email", "count", "items": [...] } }`. SNS ARNs and other internals are not returned.
-- Needs `dynamodb:Scan` on the `pnr-tracking` table.
-- Lambda role: `service-role/pnr-update-tracking-role-3fckz8s0`.
+## Email notifications
 
-> **TODO (authentication, deferred):** this route is currently **unauthenticated**. Anyone who knows an
-> email address can list that person's PNRs and passenger/berth details. Planned fix: create a Cognito
-> user pool + app client, attach a JWT authorizer to `GET /trackings`, add `authorization` to the API's
-> CORS `AllowHeaders`, set Lambda env `REQUIRE_AUTH=true` (the Lambda already prefers the verified `email`
-> claim from the JWT and then ignores `?email=`), and add sign-in to the frontend. The other routes
-> (`/pnr/{pnr}`, `/track`, `/track/{trackingId}`) are also unauthenticated and not yet reviewed.
+Notifications use **Amazon SNS**, not SES, so no sending domain or SES production access is needed. Each tracking request has its own SNS topic, so one person's updates can never reach another person. The recipient must click **Confirm subscription** in the first SNS email (check spam) before updates are delivered. Messages are plain text and contain the PNR, train, journey date, chart status, each passenger's status/coach/berth, what changed, and whether tracking is still active or why it stopped.
 
-### `pnr-update-tracking`
+## DynamoDB
 
-Runs periodically through an EventBridge Scheduler schedule named `pnr-tracker-update-schedule` (`rate(30 minutes)`), which invokes this Lambda directly via a dedicated execution role. This is EventBridge **Scheduler**, a separate AWS API from classic EventBridge **Rules** — worth remembering when checking whether it's still configured, since `aws events list-rules` won't show it.
+Table `pnr-tracking`, partition key `trackingId`. A record holds:
 
-Responsibilities:
+- identity: `trackingId`, `pnr`, `email`, `trackingKey` (`{pnr}#{email}`, email lowercased)
+- train: `trainNumber`, `trainName`, `source`, `destination`, `journeyDate` (departure, ISO/UTC), `arrivalDate`, `travelClass`, `quota`
+- status: `lastStatus` (`chart` + `passengers[]` with serial number, status, details, coach, berth)
+- tracking state: `active`, `stopReason`, `invalidCheckCount`
+- notifications: `snsTopicArn`, `snsSubscriptionArn`, `notificationStatus`
+- `createdAt`, `updatedAt`
 
-- Find active tracking requests.
-- Check the latest PNR status.
-- Compare it with the previously stored status, matching passengers by serial number.
-- Store the new status first, then send an email when the status changes. Storing before sending means a crash between the two steps can only skip a notification, never send a duplicate one on the next run.
-- Stop tracking when a final state is reached.
+GSI **`PnrEmailIndex`** (partition key `trackingKey`) lets `pnr-track-request` reject duplicate active requests.
 
----
+Records created before `source`/`destination`/`arrivalDate`/`travelClass`/`quota` were added were backfilled for active trackings; stopped older ones simply show `--` in the UI.
 
-# API Routes
+## Configuration
 
-The current API Gateway routes are:
+Lambda environment variables (set in the Lambda configuration; never commit secrets):
 
-| Method | Route                 | Lambda              | Purpose                     |
-| ------ | --------------------- | ------------------- | --------------------------- |
-| `GET`  | `/pnr/{pnr}`          | `pnr-checker`       | Check current PNR status    |
-| `POST` | `/track`              | `pnr-track-request` | Start tracking a PNR        |
-| `GET`  | `/track/{trackingId}` | `pnr-get-tracking`  | Retrieve a tracking request |
-| `GET`  | `/trackings?email=` or `?pnr=` | `pnr-list-tracking-by-email` | List active tracking requests for an email or PNR |
+| Variable | Used by | Purpose |
+| -------- | ------- | ------- |
+| `RAILKIT_API_KEY` | `pnr-checker`, `pnr-track-request`, `pnr-update-tracking` | Railkit credential |
+| `TRACKING_TABLE_NAME` | `pnr-track-request`, `pnr-get-tracking`, `pnr-update-tracking` | DynamoDB table name |
+| `TABLE_NAME` | `pnr-list-tracking-by-email` | DynamoDB table name (defaults to `pnr-tracking`) |
+| `REQUIRE_AUTH` | `pnr-list-tracking-by-email` | Optional; `true` rejects unauthenticated calls (see the auth note) |
 
-### Base URL
+The AWS region comes from the Lambda runtime.
 
-```text
-https://wqhly6ibz1.execute-api.ap-south-1.amazonaws.com
-```
+## IAM permissions (Lambda execution roles)
 
-### Example PNR check
-
-```text
-GET /pnr/2842762869
-```
-
-### Example tracking request
-
-```text
-POST /track
-Content-Type: application/json
-
-{
-  "pnr": "2842762869",
-  "email": "your-email@example.com"
-}
-```
+- `pnr-track-request`: `sns:CreateTopic`, `sns:Subscribe`, DynamoDB `PutItem` and `Query` (including on the `PnrEmailIndex` index).
+- `pnr-get-tracking`: DynamoDB `GetItem`.
+- `pnr-list-tracking-by-email`: DynamoDB `Scan`.
+- `pnr-update-tracking`: DynamoDB `Scan` and `UpdateItem`; `sns:ListSubscriptionsByTopic`, `sns:Publish`, `sns:DeleteTopic`.
 
 ---
 
-# Configuration
+# Local development
 
-## Frontend environment variables
-
-The frontend API URL is configured using Vite environment variables.
-
-Create a local environment file:
-
-```text
-.env.local
-```
-
-Example:
-
-```env
-VITE_API_BASE_URL=https://your-api-gateway-url
-```
-
-The application reads the value using:
-
-```javascript
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
-```
-
-The API URL should not be hardcoded inside React components.
-
-`.env.example` should contain the required variable names without private or environment-specific values:
-
-```env
-VITE_API_BASE_URL=
-```
-
-`.env.local` should contain the actual local development value and should not be committed to Git.
-
-## Backend environment variables
-
-Configure these in the relevant Lambda configuration or secure deployment system.
-
-Do not put secrets in the repository.
-
-| Variable              | Used by                                                        | Purpose                |
-| --------------------- | -------------------------------------------------------------- | ---------------------- |
-| `RAILKIT_API_KEY`     | `pnr-checker`, `pnr-track-request`, `pnr-update-tracking`      | Railkit API credential |
-| `TRACKING_TABLE_NAME` | `pnr-track-request`, `pnr-get-tracking`, `pnr-update-tracking` | DynamoDB table name    |
-| `AWS_REGION`          | Relevant Lambda functions                                      | AWS region             |
-
-The current deployment uses:
-
-```text
-ap-south-1
-```
-
----
-
-# DynamoDB
-
-The tracking table uses `trackingId` as its partition key.
-
-Tracking records contain the information required to:
-
-- Identify the tracking request.
-- Store the PNR.
-- Store the recipient information.
-- Store the latest PNR status.
-- Determine whether tracking is still active (`active`) and, once stopped, why (`stopReason`).
-- Track consecutive "PNR looks invalid" responses (`invalidCheckCount`) before treating one as final. See [When Tracking Stops](#when-tracking-stops).
-
-## `PnrEmailIndex` (GSI)
-
-A global secondary index named `PnrEmailIndex` uses `trackingKey` (`{pnr}#{email}`, lowercased email) as its partition key. `pnr-track-request` queries it to reject a new tracking request when the same PNR/email pair is already being actively tracked.
-
----
-
-# Email Notifications
-
-The project uses Amazon SNS instead of Amazon SES.
-
-This avoids the requirement for an SES sending domain and SES production access.
-
-When a user starts tracking a PNR:
-
-```text
-pnr-track-request
-        │
-        ▼
-Create SNS Topic
-        │
-        ▼
-Subscribe email address
-        │
-        ▼
-SNS sends confirmation email
-        │
-        ▼
-User confirms subscription
-```
-
-The user must confirm the SNS subscription before receiving PNR update notifications.
-
-Each tracking request has its own SNS topic. This prevents one person's tracking notifications from being sent to another person.
-
-Notifications are sent as plain-text email messages.
-
----
-
-# Required SNS Permissions
-
-The Lambda execution roles require the following SNS permissions in `ap-south-1`.
-
-### `pnr-track-request`
-
-```text
-sns:CreateTopic
-sns:Subscribe
-```
-
-### `pnr-update-tracking`
-
-```text
-sns:ListSubscriptionsByTopic
-sns:Publish
-```
-
-`pnr-track-request` additionally requires `dynamodb:Query` permission on the `PnrEmailIndex` GSI (in addition to its existing table permissions) to check for duplicate active tracking requests. Other existing DynamoDB permissions remain unchanged.
-
----
-
-# Tracking Lifecycle
-
-A tracking request follows this general lifecycle:
-
-```text
-POST /track
-      │
-      ▼
-Reject if this PNR/email
-is already actively tracked
-      │
-      ▼
-Check PNR immediately
-      │
-      ▼
-Reject if chart already
-prepared or journey passed
-      │
-      ▼
-Create SNS topic
-+ email subscription
-      │
-      ▼
-Store initial status
-in DynamoDB
-      │
-      ▼
-Wait for email confirmation
-      │
-      ▼
-EventBridge invokes
-pnr-update-tracking
-every 30 minutes
-      │
-      ▼
-Check latest PNR status
-      │
-      ├── No change
-      │       │
-      │       ▼
-      │   Keep tracking
-      │
-      ├── Status changed
-      │       │
-      │       ▼
-      │   Save status
-      │   + send notification
-      │
-      └── Final state
-              │
-              ▼
-        Save status
-        + send final notification
-        + deactivate tracking
-```
-
----
-
-# When Tracking Stops
-
-Tracking is stopped when one of the following conditions is reached:
-
-- Railway chart is prepared.
-- All passengers are confirmed.
-- All passengers are cancelled.
-- The journey time has passed.
-- The PNR is no longer recognized by Railkit (`"No PNR data found or invalid PNR number"`), confirmed across 3 consecutive scheduled runs. A single occurrence is not enough on its own — Railkit's upstream source (indianrail.gov.in) can return this same error during a temporary outage or maintenance window, not just for a genuinely expired/invalid PNR, so the record's `invalidCheckCount` must reach the threshold before tracking is actually stopped. Any successful check in between resets the count to zero.
-
-The reason tracking stopped is stored on the record as `stopReason` (`CHART_PREPARED` / `ALL_CONFIRMED` / `ALL_CANCELLED` / `JOURNEY_OVER` / `INVALID_PNR`).
-
----
-
-# Status Comparison
-
-The update Lambda stores a normalized PNR status snapshot containing:
-
-- Chart status.
-- Passenger serial number.
-- Passenger current status.
-- Passenger current details.
-- Passenger coach.
-- Passenger berth number.
-
-During the next scheduled update, these values are compared with the previously stored `lastStatus`.
-
-A notification is sent when one or more of these values changes.
-
----
-
-# Email Update Contents
-
-The update Lambda creates a user-friendly notification containing:
-
-- PNR number.
-- Train name and number.
-- Journey date.
-- Current chart status.
-- Current status for each passenger.
-- Coach and berth information when available.
-- Whether tracking is still active or has reached a final state.
-
-Final notifications explain why tracking stopped, for example:
-
-```text
-Chart prepared
-All passengers confirmed
-All passengers cancelled
-Journey completed
-```
-
----
-
-# Local Development
-
-## Frontend
-
-From the `frontend/` directory, install dependencies:
+Frontend, from `frontend/`:
 
 ```powershell
 npm install
+copy .env.example .env.local   # then set VITE_API_BASE_URL
+npm run dev                    # http://localhost:5173
+npm run lint
+npm run build
 ```
 
-Create `.env.local`:
+`.env.local`:
 
 ```env
-VITE_API_BASE_URL=https://your-api-gateway-url
+VITE_API_BASE_URL=https://wqhly6ibz1.execute-api.ap-south-1.amazonaws.com
 ```
 
-Start the development server:
-
-```powershell
-npm run dev
-```
-
-The application will be available at the local Vite development URL.
+`.env.local` is git-ignored; `.env.example` lists the required variable names. The API URL is read with `import.meta.env.VITE_API_BASE_URL` and must never be hardcoded in components. `http://localhost:5173` is already in the API's CORS allow-list.
 
 ---
 
 # Deployment
 
-## Frontend (AWS Amplify, connected to GitHub)
+Both halves deploy automatically when you push to `main`.
 
-The frontend is hosted on AWS Amplify (app `pnr-tracker-aws`, `ap-south-1`), connected to this repository's `main` branch. **Every push to `main` builds and deploys automatically.**
+## Frontend – AWS Amplify
 
-- Live URL: `https://main.d321bth21mrx57.amplifyapp.com` (the default Amplify URL; a custom domain is intentionally not used to avoid the cost).
-- The repo-root `amplify.yml` is a monorepo build spec: `appRoot: frontend`, `npm ci` then `npm run build`, output `dist`.
-- The only build-time configuration is the Amplify environment variable `VITE_API_BASE_URL` (the API Gateway base URL). Vite bakes it into the bundle.
-- The site URL must be listed in the API Gateway CORS `AllowOrigins` (along with `http://localhost:5173` for local development). If the Amplify app is ever recreated, its new URL has to be added there.
+The Amplify app `pnr-tracker-aws` (`ap-south-1`) is connected to this repo's `main` branch and builds on every push.
 
-## Backend (Lambda, GitHub Actions)
+- `amplify.yml` is the monorepo build spec: `appRoot: frontend`, `npm ci`, `npm run build`, output `dist`.
+- The only build setting is the Amplify environment variable `VITE_API_BASE_URL`; Vite bakes it into the bundle.
+- The default `*.amplifyapp.com` URL is used on purpose (no custom domain, to avoid the cost).
+- The site's URL must be in the API Gateway CORS `AllowOrigins`. If the Amplify app is ever recreated, add its new URL there.
 
-Pushing to `main` deploys the Lambdas automatically through `.github/workflows/deploy-lambdas.yml`:
+## Backend – GitHub Actions
 
-- Only the functions whose `backend/<folder>/` changed are deployed (editing the workflow file, or running it manually from the Actions tab, deploys all five).
-- For each one the workflow runs `npm ci --omit=dev`, zips the folder and calls `aws lambda update-function-code`.
-- Folder → function: `pnr-checker` → `pnr-status-checker`; the other four use their folder name.
-- Authentication uses GitHub OIDC (no stored AWS keys): the workflow assumes the IAM role `github-actions-pnr-deploy`, which is limited to `lambda:UpdateFunctionCode` / `GetFunctionConfiguration` on these five functions and can only be assumed from this repository's `main` branch (the trust policy matches GitHub's ID-suffixed subject claim, `repo:<owner>@<ownerId>/<repo>@<repoId>:ref:refs/heads/main`). The role's trust and permission policies are in `infra/github-actions-*.json`.
-- It deploys code only. Lambda configuration (environment variables, IAM roles, API Gateway routes, DynamoDB) is still changed manually.
-- Each folder needs a committed `package-lock.json` for `npm ci`.
+`.github/workflows/deploy-lambdas.yml` runs on pushes to `main` that touch `backend/**` (or the workflow file), and manually from the Actions tab.
 
-To deploy by hand instead, zip the folder (with `node_modules`) using a zip tool that writes forward-slash paths and run `aws lambda update-function-code`.
+- It deploys only the functions whose `backend/<folder>/` changed; editing the workflow file or running it manually deploys all five.
+- For each one: `npm ci --omit=dev`, zip, `aws lambda update-function-code`, wait until updated. Each folder therefore needs a committed `package-lock.json`.
+- Folder → function: `pnr-checker` → `pnr-status-checker`; the others use their folder name.
+- It deploys **code only**. Lambda settings, environment variables, IAM roles, API routes, the schedule and DynamoDB are changed manually.
+
+### AWS access (OIDC, no stored keys)
+
+The workflow signs in with GitHub OIDC and assumes the IAM role `github-actions-pnr-deploy`. The files in `infra/` exist only for this:
+
+- `infra/github-actions-trust-policy.json` – who may assume the role: only this repository's `main` branch. GitHub's subject claim carries numeric IDs (`repo:<owner>@<ownerId>/<repo>@<repoId>:ref:refs/heads/main`), so the policy uses that exact form.
+- `infra/github-actions-deploy-policy.json` – what the role may do: `lambda:UpdateFunctionCode` and `lambda:GetFunctionConfiguration` on the five functions, nothing else.
+
+To recreate it in a new account, put your account ID in both files and run:
+
+```bash
+aws iam create-open-id-connect-provider --url https://token.actions.githubusercontent.com --client-id-list sts.amazonaws.com
+aws iam create-role --role-name github-actions-pnr-deploy --assume-role-policy-document file://infra/github-actions-trust-policy.json
+aws iam put-role-policy --role-name github-actions-pnr-deploy --policy-name deploy-lambdas --policy-document file://infra/github-actions-deploy-policy.json
+```
 
 ---
 
 # Testing
 
-The project is currently being tested with a clean DynamoDB table.
-
-## 1. Check a PNR
-
-PowerShell:
+Check a PNR:
 
 ```powershell
-Invoke-RestMethod `
-    -Uri "https://wqhly6ibz1.execute-api.ap-south-1.amazonaws.com/pnr/2842762869" `
-    -Method GET
+Invoke-RestMethod -Uri "https://wqhly6ibz1.execute-api.ap-south-1.amazonaws.com/pnr/2842762869"
 ```
 
-## 2. Start Tracking
-
-Use the `/track` route:
+Start tracking:
 
 ```powershell
-$body = @{
-    pnr   = "2842762869"
-    email = "your-email@example.com"
-} | ConvertTo-Json
-
-Invoke-RestMethod `
-    -Uri "https://wqhly6ibz1.execute-api.ap-south-1.amazonaws.com/track" `
-    -Method POST `
-    -ContentType "application/json" `
-    -Body $body
+$body = @{ pnr = "2842762869"; email = "you@example.com" } | ConvertTo-Json
+Invoke-RestMethod -Uri "https://wqhly6ibz1.execute-api.ap-south-1.amazonaws.com/track" `
+    -Method POST -ContentType "application/json" -Body $body
 ```
 
-After a successful request:
+Then confirm the SNS subscription email. Calling `/track` again for the same active PNR/email returns `409 Conflict` with the existing `trackingId`.
 
-1. Check the returned `trackingId`.
-2. Check DynamoDB for the newly created record.
-3. Check the email inbox for the Amazon SNS subscription confirmation.
-4. Click **Confirm subscription**.
-5. Verify that the DynamoDB record contains the expected tracking information.
-6. Manually invoke `pnr-update-tracking` when testing the scheduled update flow.
-
-Calling `/track` again with the same PNR and email while that request is still active returns `409 Conflict` with the existing `trackingId` instead of creating a new record.
-
-## 3. Get a Tracking Request
-
-After receiving a `trackingId`:
+Look a tracking up:
 
 ```powershell
-Invoke-RestMethod `
-    -Uri "https://wqhly6ibz1.execute-api.ap-south-1.amazonaws.com/track/<trackingId>" `
-    -Method GET
+Invoke-RestMethod -Uri "https://wqhly6ibz1.execute-api.ap-south-1.amazonaws.com/track/<trackingId>"
+Invoke-RestMethod -Uri "https://wqhly6ibz1.execute-api.ap-south-1.amazonaws.com/trackings?email=you@example.com"
+Invoke-RestMethod -Uri "https://wqhly6ibz1.execute-api.ap-south-1.amazonaws.com/trackings?pnr=2842762869"
 ```
+
+To test the scheduled flow without waiting, invoke `pnr-update-tracking` manually from the Lambda console. There are no automated tests yet.
 
 ---
 
-# Important Testing Note
+# Scope and future work
 
-The current API Gateway route is:
+The project intentionally uses a DynamoDB scan and serial processing because it is built for a handful of users. The API has no rate limiting beyond API Gateway defaults.
 
-```text
-POST /track
-```
+Possible next steps:
 
-There is **no `POST /tracking` route** in the current API Gateway configuration.
-
-Calling:
-
-```text
-POST /tracking
-```
-
-will therefore return:
-
-```json
-{
-  "message": "Not Found"
-}
-```
+- Authentication for the tracking routes (see the known gap above) and rate limiting.
+- A GSI on `email` instead of a filtered scan.
+- Better monitoring and alarms (for example if the scheduler stops firing).
+- Automated tests.
 
 ---
 
-# Git and Environment Files
+# Tech stack
 
-Environment-specific files should not be committed.
-
-The repository should ignore:
-
-```text
-.env.local
-.env
-```
-
-while keeping:
-
-```text
-.env.example
-```
-
-in the repository so other developers know which environment variables are required.
-
-The frontend API URL should always be provided through the environment rather than hardcoded into the application.
-
----
-
-# Project Scope
-
-This project intentionally uses a simple DynamoDB scan and serial processing because it is designed for a small number of users.
-
-It is not currently intended to be a production-scale public service.
-
-A basic API rate limit is the only near-term protection planned before sharing the application with friends.
-
----
-
-# Future Improvements
-
-Potential future improvements include:
-
-- Better API rate limiting.
-- Improved PNR validation.
-- Better error handling.
-- Authentication for tracking requests.
-- More efficient DynamoDB querying.
-- Improved notification formatting.
-- Deployment automation.
-- Frontend production deployment.
-- Better monitoring and logging.
-- Automated testing.
-- Improved handling of expired tracking requests.
-
----
-
-# Tech Stack
-
-## Frontend
-
-- React
-- Vite
-- JavaScript
-- CSS
-
-## Backend
-
-- AWS Lambda
-- Amazon API Gateway
-- Amazon DynamoDB
-- Amazon SNS
-- Amazon EventBridge
-
-## External API
-
-- Railkit
-
----
-
-# Status
-
-🚧 **Personal project — actively under development**
-
-The core PNR status checking and tracking workflow is implemented. The frontend is being iteratively improved while the AWS backend and notification workflow are being tested.
+- **Frontend:** React, Vite, JavaScript, CSS (hosted on AWS Amplify)
+- **Backend:** AWS Lambda (Node.js), API Gateway, DynamoDB, SNS, EventBridge Scheduler
+- **CI/CD:** AWS Amplify (frontend), GitHub Actions + OIDC (Lambdas)
+- **External API:** Railkit
