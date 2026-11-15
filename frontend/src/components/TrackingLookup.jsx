@@ -76,49 +76,55 @@ function TrackingLookup() {
   };
 
   return (
-    <div className="tracking-lookup">
-      <div className="lookup-modes" role="group" aria-label="Search by">
-        {Object.entries(MODES).map(([key, option]) => (
-          <button
-            key={key}
-            type="button"
-            className={`lookup-mode ${mode === key ? "active" : ""}`}
-            aria-pressed={mode === key}
-            onClick={() => changeMode(key)}
-          >
-            {option.label}
-          </button>
-        ))}
-      </div>
+    <>
+      <section className="card">
+        <h2 className="card-title">Find my trackings</h2>
 
-      <FormField
-        id="lookupValue"
-        label={config.label}
-        type={config.type}
-        value={value}
-        onChange={(e) => setValue(e.target.value)}
-        placeholder={config.placeholder}
-      />
+        <div className="lookup-modes" role="group" aria-label="Search by">
+          {Object.entries(MODES).map(([key, option]) => (
+            <button
+              key={key}
+              type="button"
+              className={`lookup-mode ${mode === key ? "active" : ""}`}
+              aria-pressed={mode === key}
+              onClick={() => changeMode(key)}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
 
-      <button
-        className="primary-button"
-        onClick={handleLookup}
-        disabled={!valid || loading}
-      >
-        {loading ? "Checking..." : "Check Tracking"}
-      </button>
+        <FormField
+          id="lookupValue"
+          label={`Search by ${config.label.toLowerCase()}`}
+          type={config.type}
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          placeholder={config.placeholder}
+        />
 
-      {error && <p className="error-message">{error}</p>}
+        <button
+          className="primary-button"
+          onClick={handleLookup}
+          disabled={!valid || loading}
+        >
+          {loading ? "Searching..." : "Find trackings"}
+        </button>
+
+        {error && <p className="error-message">{error}</p>}
+      </section>
 
       {results && results.length === 0 && (
-        <p>No active tracking requests found.</p>
+        <section className="card empty">
+          No active tracking requests found.
+        </section>
       )}
 
       {results &&
         results.map((tracking) => (
           <TrackingResult key={tracking.trackingId} tracking={tracking} />
         ))}
-    </div>
+    </>
   );
 }
 

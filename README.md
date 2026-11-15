@@ -81,7 +81,8 @@ frontend/
 │   │   ├── PnrStatus.jsx
 │   │   ├── TrackingForm.jsx
 │   │   ├── TrackingLookup.jsx
-│   │   └── TrackingResult.jsx
+│   │   ├── TrackingResult.jsx
+│   │   └── TrainCard.jsx
 │   │
 │   ├── services/
 │   │   └── pnrApi.js
@@ -151,9 +152,13 @@ Responsible for:
 - Letting the user search by **Email**, **PNR** or **Tracking ID** (a mode switch above one input).
 - Email/PNR search calls `GET /trackings` and lists the **active** trackings found; Tracking ID calls `GET /track/{trackingId}` and shows that one request (including why it stopped, if it did).
 
+#### `TrainCard.jsx`
+
+The shared card used for every train (one card per train, whether it comes from a live PNR check or from a saved tracking request). It shows the PNR, train name and number, a departure → arrival timeline (times, dates, stations and journey duration, all in IST), class/quota/distance and chart chips, and the passenger list with colour-coded status pills (green confirmed, amber RAC, red waiting list, grey cancelled).
+
 #### `TrackingResult.jsx`
 
-Renders one tracking request: PNR, train number and name, source → destination, departure date and time (IST), chart status and passengers.
+Maps a tracking request from the API onto a `TrainCard` and adds the tracking-active/stopped badge and stop reason.
 
 #### `services/pnrApi.js`
 
@@ -214,7 +219,7 @@ Request:
 
 Returns an existing tracking request using its tracking ID.
 
-The response only includes fields relevant to the client (`trackingId`, `pnr`, `trainNumber`, `trainName`, `source`, `destination`, `journeyDate`, `lastStatus`, `active`, `notificationStatus`, `stopReason`). It intentionally excludes the recipient's email address and the internal SNS topic/subscription ARNs.
+The response only includes fields relevant to the client (`trackingId`, `pnr`, `trainNumber`, `trainName`, `source`, `destination`, `journeyDate`, `arrivalDate`, `lastStatus`, `active`, `notificationStatus`, `stopReason`). It intentionally excludes the recipient's email address and the internal SNS topic/subscription ARNs.
 
 ```text
 GET /track/{trackingId}
@@ -555,24 +560,18 @@ The application will be available at the local Vite development URL.
 
 # Deployment
 
-The frontend is hosted on AWS Amplify (app `pnr-tracker-ui`, `ap-south-1`, branch `main`). The only frontend configuration is `VITE_API_BASE_URL`, which Vite bakes in at build time.
+## Frontend (AWS Amplify, connected to GitHub)
 
-The Lambda functions are deployed manually (there is no IaC); after changing one, upload its new code to the matching Lambda function.
+The frontend is hosted on AWS Amplify (app `pnr-tracker-aws`, `ap-south-1`), connected to this repository's `main` branch. **Every push to `main` builds and deploys automatically.**
 
-### Deploying from GitHub
+- Live URL: `https://main.d321bth21mrx57.amplifyapp.com` (the default Amplify URL; a custom domain is intentionally not used to avoid the cost).
+- The repo-root `amplify.yml` is a monorepo build spec: `appRoot: frontend`, `npm ci` then `npm run build`, output `dist`.
+- The only build-time configuration is the Amplify environment variable `VITE_API_BASE_URL` (the API Gateway base URL). Vite bakes it into the bundle.
+- The site URL must be listed in the API Gateway CORS `AllowOrigins` (along with `http://localhost:5173` for local development). If the Amplify app is ever recreated, its new URL has to be added there.
 
-The repo-root `amplify.yml` is a monorepo build spec (`appRoot: frontend`, `npm ci` then `npm run build`, output `dist`). Create an Amplify app from this GitHub repo, branch `main`, set the `VITE_API_BASE_URL` environment variable, and every push to `main` redeploys. The site's URL must also be listed in the API Gateway CORS `AllowOrigins`.
+## Backend (Lambda, manual)
 
-### Manual frontend deploy (while the app is not connected to GitHub)
-
-```powershell
-cd frontend
-npm run build
-# zip the contents of dist/, then:
-aws amplify create-deployment --app-id <appId> --branch-name main --region ap-south-1
-# upload the zip to the returned zipUploadUrl, then:
-aws amplify start-deployment --app-id <appId> --branch-name main --job-id <jobId> --region ap-south-1
-```
+There is no IaC. After changing a Lambda in `backend/`, zip its folder (`index.mjs`, `package.json` and `node_modules` when present) and upload it with `aws lambda update-function-code`. Use a zip tool that writes forward-slash paths (for example Windows `tar -a -c -f x.zip`), not PowerShell `Compress-Archive`.
 
 ---
 

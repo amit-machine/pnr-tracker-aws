@@ -52,13 +52,13 @@ function PnrForm() {
   };
 
   return (
-    <div className="pnr-form">
-      <section className="form-section">
-        <h2>Check PNR Status</h2>
+    <>
+      <section className="card">
+        <h2 className="card-title">Check PNR status</h2>
 
         <FormField
           id="pnr"
-          label="PNR Number"
+          label="PNR number"
           inputMode="numeric"
           value={pnr}
           onChange={handlePnrChange}
@@ -72,7 +72,7 @@ function PnrForm() {
           onClick={handleGetStatus}
           disabled={!pnrValid || loading}
         >
-          {loading ? "Checking..." : "Get Current Status"}
+          {loading ? "Checking..." : "Get current status"}
         </button>
 
         {error && <p className="error-message">{error}</p>}
@@ -80,20 +80,16 @@ function PnrForm() {
 
       {status && (
         <>
-          <div className="section-divider" />
-
           <PnrStatus status={status} />
 
           {canTrackPnr(status) && (
-            <>
-              <div className="section-divider" />
-
+            <section className="card">
               <TrackingForm pnr={pnr} />
-            </>
+            </section>
           )}
         </>
       )}
-    </div>
+    </>
   );
 }
 

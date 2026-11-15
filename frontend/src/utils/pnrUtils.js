@@ -62,7 +62,7 @@ export function statusLabel(status) {
     return "Confirmed";
   }
 
-  if (value.startsWith("WL")) {
+  if (value.includes("WL")) {
     return "Waiting List";
   }
 
@@ -77,7 +77,7 @@ export function statusLabel(status) {
   return status || "Not available";
 }
 
-function parseRailkitDate(value) {
+export function parseRailkitDate(value) {
   if (!value) {
     return null;
   }
@@ -143,24 +143,73 @@ function parseRailkitDate(value) {
 }
 
 // --------------------------------------------------
-// Journey departure date and time in Indian time
+// Date / time helpers (all shown in Indian time)
 // --------------------------------------------------
 
-export function formatJourneyDateTime(isoDate) {
-  const date = new Date(isoDate);
+const IST = "Asia/Kolkata";
 
-  if (!isoDate || Number.isNaN(date.getTime())) {
+function validDate(value) {
+  if (!value) {
     return null;
   }
 
-  return `${new Intl.DateTimeFormat("en-IN", {
-    timeZone: "Asia/Kolkata",
-    weekday: "short",
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-  }).format(date)} IST`;
+  const date = value instanceof Date ? value : new Date(value);
+
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function format(value, options) {
+  const date = validDate(value);
+
+  return date
+    ? new Intl.DateTimeFormat("en-IN", { timeZone: IST, ...options }).format(date)
+    : null;
+}
+
+export function formatTime(value) {
+  return format(value, { hour: "numeric", minute: "2-digit", hour12: true });
+}
+
+export function formatDay(value) {
+  return format(value, { weekday: "short", day: "numeric", month: "short" });
+}
+
+export function formatDuration(from, to) {
+  const start = validDate(from);
+  const end = validDate(to);
+
+  if (!start || !end || end <= start) {
+    return null;
+  }
+
+  const minutes = Math.round((end - start) / 60000);
+  const days = Math.floor(minutes / 1440);
+  const hours = Math.floor((minutes % 1440) / 60);
+  const mins = minutes % 60;
+
+  return [days && `${days}d`, hours && `${hours}h`, mins && `${mins}m`]
+    .filter(Boolean)
+    .join(" ");
+}
+
+// --------------------------------------------------
+// Colour tone for a passenger status
+// --------------------------------------------------
+
+export function statusTone(status) {
+  const value = String(status || "").toUpperCase();
+
+  if (value.startsWith("CNF") || value === "CONFIRMED") {
+    return "success";
+  }
+
+  if (value.startsWith("RAC")) {
+    return "warning";
+  }
+
+  if (value.includes("WL")) {
+    return "danger";
+  }
+
+  return "neutral";
 }

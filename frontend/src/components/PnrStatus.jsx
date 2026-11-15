@@ -1,65 +1,35 @@
-import PassengerCard from "./PassengerCard";
+import { parseRailkitDate } from "../utils/pnrUtils";
+import TrainCard from "./TrainCard";
 
-function PnrStatus({ status }) {
+function PnrStatus({ status, children }) {
+  const journey = status.journey || {};
+
+  const chips = [
+    journey.class && { label: "Class", value: journey.class },
+    journey.quota && { label: "Quota", value: journey.quota },
+    journey.distance && { label: "Distance", value: `${journey.distance} km` },
+  ].filter(Boolean);
+
+  const passengers = (status.passengers || []).map((passenger) => ({
+    serialNumber: passenger.serialNumber,
+    ...passenger.current,
+  }));
+
   return (
-    <section className="status-section">
-      <div className="status-header">
-        <div>
-          <span className="section-label">PNR STATUS</span>
-          <h2>{status.pnr}</h2>
-        </div>
-
-        <span className="status-badge">
-          {status.chart?.status || "Not available"}
-        </span>
-      </div>
-
-      <div className="journey-card">
-        <h3>
-          {status.train?.number || "Not available"} -{" "}
-          {status.train?.name || "Not available"}
-        </h3>
-
-        <p>
-          {status.journey?.source?.name || "Not available"} →{" "}
-          {status.journey?.destination?.name || "Not available"}
-        </p>
-
-        <span>{status.journey?.dateOfJourney || "Not available"}</span>
-      </div>
-
-      <div className="journey-details">
-        <div className="detail-card">
-          <span>Class</span>
-          <strong>{status.journey?.class || "Not available"}</strong>
-        </div>
-
-        <div className="detail-card">
-          <span>Quota</span>
-          <strong>{status.journey?.quota || "Not available"}</strong>
-        </div>
-
-        <div className="detail-card">
-          <span>Distance</span>
-          <strong>
-            {status.journey?.distance ? `${status.journey.distance} km` : "Not available"}
-          </strong>
-        </div>
-      </div>
-
-      <div className="passengers-section">
-        <h3>Passengers</h3>
-
-        <div className="passenger-list">
-          {(status.passengers || []).map((passenger, index) => (
-            <PassengerCard
-              key={passenger.serialNumber || index}
-              passenger={passenger}
-            />
-          ))}
-        </div>
-      </div>
-    </section>
+    <TrainCard
+      pnr={status.pnr}
+      trainNumber={status.train?.number}
+      trainName={status.train?.name}
+      source={journey.source?.name}
+      destination={journey.destination?.name}
+      departure={parseRailkitDate(journey.dateOfJourney)}
+      arrival={parseRailkitDate(journey.arrivalDate)}
+      chart={status.chart?.status}
+      chips={chips}
+      passengers={passengers}
+    >
+      {children}
+    </TrainCard>
   );
 }
 

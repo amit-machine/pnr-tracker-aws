@@ -7,197 +7,214 @@
 }
 
 :root {
-  --primary: #4169e1;
-  --primary-hover: #3557c7;
+  --brand: #4f46e5;
+  --brand-dark: #3730a3;
+  --brand-soft: #eef2ff;
 
-  --text: #172033;
+  --text: #0f172a;
   --muted: #64748b;
-  --light-text: #94a3b8;
+  --faint: #94a3b8;
 
-  --border: #e2e8f0;
-  --input-border: #cbd5e1;
+  --border: #e5e9f2;
+  --input-border: #cfd6e4;
 
-  --background: #f4f7fb;
+  --bg: #f3f5fb;
   --surface: #ffffff;
-  --soft-surface: #f7f9fc;
+
+  --success: #047857;
+  --success-bg: #d1fae5;
+  --warning: #92400e;
+  --warning-bg: #fef3c7;
+  --danger: #b91c1c;
+  --danger-bg: #fee2e2;
+  --neutral: #475569;
+  --neutral-bg: #e8ecf4;
 
   --error: #dc2626;
-  --success: #047857;
 
-  --radius-sm: 7px;
-  --radius-md: 10px;
-  --radius-lg: 14px;
+  --radius: 18px;
+  --shadow: 0 1px 2px rgba(15, 23, 42, 0.05), 0 8px 24px rgba(30, 41, 99, 0.08);
 }
 
 body {
   margin: 0;
-  font-family: Arial, sans-serif;
-  background: var(--background);
+  font-family: "Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif;
+  background: var(--bg);
   color: var(--text);
+  -webkit-font-smoothing: antialiased;
 }
 
 #root {
   min-height: 100vh;
 }
 
+button {
+  font-family: inherit;
+}
+
 /* =========================
-   Page
+   Hero
 ========================= */
 
-.pnr-page {
-  width: 100%;
-  max-width: 760px;
+.hero {
+  padding: 56px 24px 96px;
+  background:
+    radial-gradient(circle at 85% 0%, rgba(167, 139, 250, 0.45), transparent 45%),
+    linear-gradient(135deg, #1e1b4b 0%, #3730a3 55%, #4f46e5 100%);
+  color: white;
+}
+
+.hero-inner {
+  max-width: 720px;
   margin: 0 auto;
-  padding: 56px 24px;
 }
 
-.page-header {
-  margin-bottom: 28px;
+.hero-badge {
+  display: inline-block;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.14);
+  font-size: 13px;
+  font-weight: 600;
 }
 
-.page-header h1 {
-  margin: 0 0 8px;
-  font-size: 36px;
+.hero h1 {
+  margin: 16px 0 8px;
+  font-size: 40px;
+  letter-spacing: -0.5px;
 }
 
-.page-header p {
+.hero p {
   margin: 0;
-  color: var(--muted);
+  max-width: 480px;
+  color: rgba(255, 255, 255, 0.78);
   font-size: 16px;
+  line-height: 1.5;
 }
 
-.pnr-card {
+/* =========================
+   Page + tabs
+========================= */
+
+.page {
+  max-width: 720px;
+  margin: -56px auto 0;
+  padding: 0 24px 64px;
+}
+
+.tabs {
+  display: flex;
+  gap: 4px;
+  padding: 5px;
+  margin-bottom: 18px;
   background: var(--surface);
-  border-radius: var(--radius-lg);
-  padding: 30px;
-  box-shadow: 0 8px 30px rgba(15, 23, 42, 0.08);
+  border-radius: 999px;
+  box-shadow: var(--shadow);
 }
 
-.pnr-card + .pnr-card {
-  margin-top: 20px;
-}
-
-.link-button {
-  background: none;
+.tab {
+  flex: 1;
+  height: 42px;
   border: none;
-  padding: 0;
-  color: var(--primary);
-  font-size: 14px;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 15px;
   font-weight: 600;
   cursor: pointer;
+  transition: background 0.15s, color 0.15s;
 }
 
-.link-button:hover {
-  text-decoration: underline;
+.tab:hover:not(.active) {
+  background: var(--brand-soft);
+  color: var(--brand);
 }
 
-.tracking-lookup {
-  margin-top: 16px;
-}
-
-.tracking-lookup-result {
-  margin-top: 20px;
-  padding-top: 20px;
-  border-top: 1px solid var(--input-border);
+.tab.active {
+  background: var(--brand);
+  color: white;
 }
 
 /* =========================
-   Form
+   Cards
 ========================= */
 
-.form-section h2 {
-  margin: 0 0 24px;
-  font-size: 24px;
+.card,
+.train-card {
+  background: var(--surface);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 26px;
 }
 
+.card + .card,
+.card + .train-card,
+.train-card + .card,
+.train-card + .train-card {
+  margin-top: 18px;
+}
+
+.card-title {
+  margin: 0 0 20px;
+  font-size: 20px;
+}
+
+.card.empty {
+  color: var(--muted);
+  text-align: center;
+}
+
+/* =========================
+   Forms
+========================= */
+
 .form-group {
-  margin-bottom: 20px;
+  margin-bottom: 18px;
 }
 
 .form-group label {
   display: block;
   margin-bottom: 8px;
+  font-size: 14px;
   font-weight: 600;
 }
 
 .form-group input,
 .email-field input {
+  display: block;
   width: 100%;
   height: 48px;
   padding: 0 14px;
   border: 1px solid var(--input-border);
-  border-radius: 8px;
+  border-radius: 12px;
+  background: #fbfcff;
   font-size: 16px;
   color: var(--text);
   outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
 }
 
 .form-group input:focus,
 .email-field input:focus {
-  border-color: var(--primary);
-  box-shadow: 0 0 0 3px rgba(65, 105, 225, 0.12);
+  border-color: var(--brand);
+  background: white;
+  box-shadow: 0 0 0 4px rgba(79, 70, 229, 0.12);
 }
 
 .input-hint {
   margin-top: 6px;
-  color: var(--light-text);
+  color: var(--faint);
   font-size: 13px;
 }
 
 .privacy-note {
-  margin-top: 10px;
-  color: var(--light-text);
+  margin: 10px 0 0;
+  color: var(--faint);
   font-size: 13px;
 }
 
-/* =========================
-   Buttons
-========================= */
-
-button {
-  font-family: inherit;
-}
-
-.primary-button,
-.secondary-button {
-  height: 44px;
-  padding: 0 20px;
-  border: none;
-  border-radius: var(--radius-sm);
-  font-size: 15px;
-  cursor: pointer;
-}
-
-.primary-button {
-  background: var(--primary);
-  color: white;
-}
-
-.primary-button:hover:not(:disabled) {
-  background: var(--primary-hover);
-}
-
-.secondary-button {
-  background: #e9edf5;
-  color: var(--text);
-  white-space: nowrap;
-}
-
-.secondary-button:hover:not(:disabled) {
-  background: #dce3ef;
-}
-
-button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-/* =========================
-   Errors
-========================= */
-
 .error-message {
-  margin: 10px 0 0;
+  margin: 12px 0 0;
   color: var(--error);
   font-size: 14px;
 }
@@ -208,177 +225,319 @@ button:disabled {
   font-size: 13px;
 }
 
-/* =========================
-   Divider
-========================= */
+.primary-button,
+.secondary-button {
+  height: 46px;
+  padding: 0 22px;
+  border: none;
+  border-radius: 12px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
 
-.section-divider {
-  height: 1px;
-  background: var(--border);
-  margin: 30px 0;
+.primary-button {
+  background: var(--brand);
+  color: white;
+}
+
+.primary-button:hover:not(:disabled) {
+  background: var(--brand-dark);
+}
+
+.secondary-button {
+  background: var(--brand-soft);
+  color: var(--brand);
+  white-space: nowrap;
+}
+
+.secondary-button:hover:not(:disabled) {
+  background: #e0e7ff;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Lookup mode switch */
+
+.lookup-modes {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+
+.lookup-mode {
+  padding: 7px 16px;
+  border: 1px solid var(--input-border);
+  border-radius: 999px;
+  background: white;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.lookup-mode.active {
+  background: var(--brand-soft);
+  border-color: var(--brand);
+  color: var(--brand);
 }
 
 /* =========================
-   PNR Status
+   Pills
 ========================= */
 
-.status-header {
+.pill {
+  display: inline-block;
+  padding: 5px 12px;
+  border-radius: 999px;
+  font-size: 12.5px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.pill-success {
+  background: var(--success-bg);
+  color: var(--success);
+}
+
+.pill-warning {
+  background: var(--warning-bg);
+  color: var(--warning);
+}
+
+.pill-danger {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+.pill-neutral {
+  background: var(--neutral-bg);
+  color: var(--neutral);
+}
+
+/* =========================
+   Train card
+========================= */
+
+.train-head {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  margin-bottom: 20px;
+  gap: 12px;
 }
 
-.section-label {
+.eyebrow {
   display: block;
-  margin-bottom: 4px;
-  color: var(--muted);
+  margin-bottom: 6px;
+  color: var(--brand);
   font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 1px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
 }
 
-.status-header h2 {
+.train-head h2 {
   margin: 0;
-  font-size: 26px;
+  font-size: 22px;
+  line-height: 1.25;
 }
 
-.status-badge {
-  padding: 7px 12px;
-  border-radius: 20px;
-  background: #fff3cd;
-  color: #946200;
-  font-size: 13px;
-  font-weight: 600;
-}
-
-/* =========================
-   Journey
-========================= */
-
-.journey-card {
-  padding: 20px;
-  background: var(--soft-surface);
-  border-radius: var(--radius-md);
-}
-
-.journey-card h3 {
-  margin: 0 0 8px;
-  font-size: 19px;
-}
-
-.journey-card p {
-  margin: 0 0 8px;
-  color: #334155;
-}
-
-.journey-card span {
+.train-number {
+  display: inline-block;
+  margin-top: 4px;
   color: var(--muted);
   font-size: 14px;
 }
 
-.journey-details {
+/* Route timeline */
+
+.route {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 12px;
+  grid-template-columns: 1fr minmax(70px, 140px) 1fr;
+  align-items: start;
+  gap: 8px;
+  margin-top: 22px;
+  padding: 20px;
+  background: linear-gradient(180deg, var(--brand-soft), #f8f9ff);
+  border-radius: 14px;
+}
+
+.stop {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.stop-end {
+  text-align: right;
+  align-items: flex-end;
+}
+
+.stop .time {
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+}
+
+.stop .day {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.stop .station {
+  margin-top: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.route-mid {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: 8px;
+}
+
+.duration {
+  min-height: 18px;
+  margin-bottom: 8px;
+  color: var(--muted);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.route-line {
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.route-line .bar {
+  flex: 1;
+  height: 2px;
+  background: repeating-linear-gradient(
+    90deg,
+    var(--brand) 0 6px,
+    transparent 6px 10px
+  );
+}
+
+.route-line .dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--brand);
+}
+
+/* Chips */
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
   margin-top: 16px;
 }
 
-.detail-card {
-  padding: 14px;
-  background: var(--soft-surface);
-  border-radius: 8px;
-}
-
-.detail-card span {
-  display: block;
-  margin-bottom: 5px;
-  color: var(--muted);
-  font-size: 13px;
-}
-
-.detail-card strong {
-  font-size: 15px;
-}
-
-/* =========================
-   Passengers
-========================= */
-
-.passengers-section {
-  margin-top: 28px;
-}
-
-.passengers-section h3 {
-  margin: 0 0 14px;
-  font-size: 19px;
-}
-
-.passenger-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.passenger-card {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 16px;
+.chip {
+  padding: 8px 12px;
   border: 1px solid var(--border);
-  border-radius: 9px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
 }
 
-.passenger-card h4 {
-  margin: 0 0 5px;
-  font-size: 15px;
+.chip small {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--faint);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
 }
 
-.passenger-details {
-  color: var(--muted);
+.notice {
+  margin: 14px 0 0;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: var(--neutral-bg);
+  color: var(--neutral);
   font-size: 14px;
 }
 
-.passenger-status {
+/* Passengers */
+
+.passengers {
+  margin-top: 22px;
+}
+
+.passengers h3 {
+  margin: 0 0 10px;
+  color: var(--muted);
+  font-size: 13px;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+}
+
+.passenger {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 0;
+  border-top: 1px solid var(--border);
+}
+
+.passenger-main strong {
+  display: block;
+  font-size: 15px;
+}
+
+.passenger-main span {
+  color: var(--muted);
+  font-size: 13.5px;
+}
+
+.passenger-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 5px;
   text-align: right;
 }
 
-.passenger-status strong {
-  display: block;
-  color: var(--primary);
-  font-size: 16px;
-}
-
-.passenger-status span {
-  display: block;
-  margin-top: 3px;
+.passenger-seat {
   color: var(--muted);
   font-size: 13px;
 }
 
 /* =========================
-   Tracking
+   Track this PNR
 ========================= */
-
-.tracking-section {
-  padding: 20px;
-  background: var(--soft-surface);
-  border-radius: var(--radius-md);
-}
 
 .tracking-content {
   display: flex;
   align-items: flex-start;
-  gap: 12px;
+  gap: 14px;
 }
 
 .tracking-icon {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: var(--brand-soft);
   font-size: 22px;
 }
 
 .tracking-content h3 {
-  margin: 0 0 5px;
-  font-size: 17px;
+  margin: 0 0 4px;
+  font-size: 18px;
 }
 
 .tracking-content p {
@@ -389,25 +548,30 @@ button:disabled {
 
 .tracking-form {
   display: flex;
+  align-items: flex-start;
   gap: 10px;
-  margin-top: 16px;
+  margin-top: 18px;
 }
 
 .email-field {
   flex: 1;
 }
 
-.tracking-form .secondary-button {
-  margin-top: 0;
+.tracking-form .primary-button {
+  height: 48px;
 }
 
 .tracking-success {
-  margin: 16px 0 0;
-  padding: 12px;
-  border-radius: var(--radius-sm);
-  background: #ecfdf5;
+  margin: 18px 0 0;
+  padding: 16px;
+  border-radius: 12px;
+  background: var(--success-bg);
   color: var(--success);
   font-size: 14px;
+}
+
+.tracking-success p {
+  margin: 8px 0 0;
 }
 
 .tracking-id-row {
@@ -419,15 +583,16 @@ button:disabled {
 }
 
 .tracking-id-row code {
-  background: rgba(0, 0, 0, 0.06);
   padding: 2px 6px;
   border-radius: 4px;
+  background: rgba(255, 255, 255, 0.6);
   font-size: 13px;
+  word-break: break-all;
 }
 
 .tracking-id-row .secondary-button {
-  height: 32px;
-  padding: 0 12px;
+  height: 34px;
+  padding: 0 14px;
   font-size: 13px;
 }
 
@@ -436,105 +601,46 @@ button:disabled {
 ========================= */
 
 @media (max-width: 600px) {
-  .pnr-page {
-    padding: 30px 16px;
+  .hero {
+    padding: 40px 18px 84px;
   }
 
-  .pnr-card {
-    padding: 22px;
+  .hero h1 {
+    font-size: 32px;
   }
 
-  .page-header h1 {
-    font-size: 30px;
+  .page {
+    padding: 0 14px 48px;
   }
 
-  .journey-details {
-    grid-template-columns: 1fr;
+  .card,
+  .train-card {
+    padding: 20px;
+  }
+
+  .route {
+    grid-template-columns: 1fr minmax(48px, 80px) 1fr;
+    padding: 16px 14px;
+  }
+
+  .stop .time {
+    font-size: 21px;
+  }
+
+  .stop .station {
+    font-size: 13px;
+  }
+
+  .train-head {
+    flex-direction: column;
   }
 
   .tracking-form {
     flex-direction: column;
   }
 
-  .tracking-form .secondary-button {
+  .tracking-form .primary-button,
+  .email-field {
     width: 100%;
   }
-
-  .passenger-card {
-    align-items: flex-start;
-  }
-}
-
-.email-field {
-  flex: 1;
-}
-
-.email-field input {
-  display: block;
-}
-
-.field-error {
-  margin: 6px 0 0;
-  color: var(--error);
-  font-size: 13px;
-}
-
-@media (max-width: 600px) {
-  .pnr-page {
-    padding: 30px 16px;
-  }
-
-  .pnr-card {
-    padding: 22px;
-  }
-
-  .page-header h1 {
-    font-size: 30px;
-  }
-
-  .journey-details {
-    grid-template-columns: 1fr;
-  }
-
-  .tracking-form {
-    flex-direction: column;
-  }
-
-  .tracking-form .secondary-button {
-    width: 100%;
-  }
-
-  .passenger-card {
-    align-items: flex-start;
-  }
-
-  .passenger-status {
-    margin-left: 12px;
-  }
-}
-
-/* =========================
-   Lookup mode switch
-========================= */
-
-.lookup-modes {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 16px;
-}
-
-.lookup-mode {
-  padding: 6px 14px;
-  border: 1px solid var(--input-border);
-  border-radius: 999px;
-  background: white;
-  color: var(--text);
-  font-size: 14px;
-  cursor: pointer;
-}
-
-.lookup-mode.active {
-  background: var(--primary);
-  border-color: var(--primary);
-  color: white;
 }

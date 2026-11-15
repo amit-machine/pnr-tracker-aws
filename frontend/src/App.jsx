@@ -2,34 +2,42 @@ import { useState } from "react";
 import PnrForm from "./components/PnrForm";
 import TrackingLookup from "./components/TrackingLookup";
 
+const TABS = [
+  { id: "status", label: "Check PNR" },
+  { id: "trackings", label: "My trackings" },
+];
+
 function App() {
-  const [showLookup, setShowLookup] = useState(false);
+  const [tab, setTab] = useState("status");
 
   return (
-    <main className="pnr-page">
-      <header className="page-header">
-        <h1>PNR Tracker</h1>
-        <p>Check your Indian Railways PNR status</p>
+    <>
+      <header className="hero">
+        <div className="hero-inner">
+          <span className="hero-badge">🚆 Indian Railways</span>
+          <h1>PNR Tracker</h1>
+          <p>Check your booking and get an email when its status changes.</p>
+        </div>
       </header>
 
-      <section className="pnr-card">
-        <PnrForm />
-      </section>
+      <main className="page">
+        <nav className="tabs" aria-label="Sections">
+          {TABS.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              className={`tab ${tab === item.id ? "active" : ""}`}
+              aria-current={tab === item.id ? "page" : undefined}
+              onClick={() => setTab(item.id)}
+            >
+              {item.label}
+            </button>
+          ))}
+        </nav>
 
-      <section className="pnr-card">
-        <button
-          type="button"
-          className="link-button"
-          onClick={() => setShowLookup((value) => !value)}
-        >
-          {showLookup
-            ? "Hide tracking lookup"
-            : "Find my tracking requests"}
-        </button>
-
-        {showLookup && <TrackingLookup />}
-      </section>
-    </main>
+        {tab === "status" ? <PnrForm /> : <TrackingLookup />}
+      </main>
+    </>
   );
 }
 

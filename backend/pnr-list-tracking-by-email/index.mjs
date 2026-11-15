@@ -27,6 +27,7 @@ const toPublic = (i) => ({
   journeyDate: i.journeyDate,
   source: i.source,
   destination: i.destination,
+  arrivalDate: i.arrivalDate,
   active: i.active,
   stopReason: i.stopReason,
   lastStatus: i.lastStatus,
