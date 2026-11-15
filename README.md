@@ -569,9 +569,18 @@ The frontend is hosted on AWS Amplify (app `pnr-tracker-aws`, `ap-south-1`), con
 - The only build-time configuration is the Amplify environment variable `VITE_API_BASE_URL` (the API Gateway base URL). Vite bakes it into the bundle.
 - The site URL must be listed in the API Gateway CORS `AllowOrigins` (along with `http://localhost:5173` for local development). If the Amplify app is ever recreated, its new URL has to be added there.
 
-## Backend (Lambda, manual)
+## Backend (Lambda, GitHub Actions)
 
-There is no IaC. After changing a Lambda in `backend/`, zip its folder (`index.mjs`, `package.json` and `node_modules` when present) and upload it with `aws lambda update-function-code`. Use a zip tool that writes forward-slash paths (for example Windows `tar -a -c -f x.zip`), not PowerShell `Compress-Archive`.
+Pushing to `main` deploys the Lambdas automatically through `.github/workflows/deploy-lambdas.yml`:
+
+- Only the functions whose `backend/<folder>/` changed are deployed (editing the workflow file, or running it manually from the Actions tab, deploys all five).
+- For each one the workflow runs `npm ci --omit=dev`, zips the folder and calls `aws lambda update-function-code`.
+- Folder → function: `pnr-checker` → `pnr-status-checker`; the other four use their folder name.
+- Authentication uses GitHub OIDC (no stored AWS keys): the workflow assumes the IAM role `github-actions-pnr-deploy`, which is limited to `lambda:UpdateFunctionCode` / `GetFunctionConfiguration` on these five functions and can only be assumed from this repository's `main` branch. The role's trust and permission policies are in `infra/github-actions-*.json`.
+- It deploys code only. Lambda configuration (environment variables, IAM roles, API Gateway routes, DynamoDB) is still changed manually.
+- Each folder needs a committed `package-lock.json` for `npm ci`.
+
+To deploy by hand instead, zip the folder (with `node_modules`) using a zip tool that writes forward-slash paths and run `aws lambda update-function-code`.
 
 ---
 

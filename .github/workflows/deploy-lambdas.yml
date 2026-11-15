@@ -1,0 +1,83 @@
+name: Deploy Lambdas
+
+# Deploys only the Lambda functions whose backend/ folder changed.
+# Run it manually (Actions tab -> Run workflow) to deploy all five.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - ".github/workflows/deploy-lambdas.yml"
+  workflow_dispatch:
+
+permissions:
+  id-token: write # needed for AWS OIDC login
+  contents: read
+
+concurrency:
+  group: deploy-lambdas
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: ap-south-1
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::237004326230:role/github-actions-pnr-deploy
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Deploy changed Lambdas
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+
+          # folder -> deployed Lambda function name
+          declare -A FUNCTION=(
+            [pnr-checker]=pnr-status-checker
+            [pnr-track-request]=pnr-track-request
+            [pnr-get-tracking]=pnr-get-tracking
+            [pnr-update-tracking]=pnr-update-tracking
+            [pnr-list-tracking-by-email]=pnr-list-tracking-by-email
+          )
+
+          if [ "$EVENT" = "workflow_dispatch" ] || ! git rev-parse -q --verify HEAD~1 >/dev/null; then
+            DIRS="${!FUNCTION[@]}"
+          elif git diff --name-only HEAD~1 HEAD | grep -q '^.github/workflows/deploy-lambdas.yml$'; then
+            DIRS="${!FUNCTION[@]}"
+          else
+            DIRS=$(git diff --name-only HEAD~1 HEAD -- backend | cut -d/ -f2 | sort -u)
+          fi
+
+          for dir in $DIRS; do
+            fn="${FUNCTION[$dir]:-}"
+            if [ -z "$fn" ] || [ ! -d "backend/$dir" ]; then
+              echo "Skipping $dir (no matching function)"
+              continue
+            fi
+
+            echo "::group::Deploy $dir -> $fn"
+            (
+              cd "backend/$dir"
+              npm ci --omit=dev --no-audit --no-fund
+              zip -qr "$RUNNER_TEMP/$dir.zip" . -x "*.zip"
+            )
+            aws lambda update-function-code \
+              --function-name "$fn" \
+              --zip-file "fileb://$RUNNER_TEMP/$dir.zip" \
+              --query '[FunctionName,LastModified]' --output text
+            aws lambda wait function-updated --function-name "$fn"
+            echo "::endgroup::"
+          done
