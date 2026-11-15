@@ -95,3 +95,25 @@ export async function startPnrTracking(pnr, email) {
 
   return result;
 }
+
+export async function listTrackingsByEmail(email) {
+  const response = await fetch(
+    `${API_BASE_URL}/trackings?email=${encodeURIComponent(email)}`,
+  );
+
+  if (!response.ok) {
+    const message = await getApiError(response, "Failed to fetch trackings");
+
+    throw new Error(message);
+  }
+
+  const result = await response.json();
+
+  if (!result.success) {
+    throw new Error(
+      result.message || result.error || "Unable to fetch trackings",
+    );
+  }
+
+  return result.data;
+}

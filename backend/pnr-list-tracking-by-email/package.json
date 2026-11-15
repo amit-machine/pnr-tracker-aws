@@ -1,0 +1,15 @@
+{
+  "name": "pnr-list-tracking-by-email",
+  "version": "1.0.0",
+  "description": "List all PNR tracking requests for an email address",
+  "main": "index.mjs",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.1121.0",
+    "@aws-sdk/lib-dynamodb": "^3.1121.0"
+  }
+}

@@ -9,7 +9,7 @@ The project is intended for personal use and a small group of friends rather tha
 ## Repository Layout
 
 ```text
-backend/     4 Lambda functions (pnr-checker, pnr-track-request, pnr-get-tracking, pnr-update-tracking)
+backend/     5 Lambda functions (pnr-checker, pnr-track-request, pnr-get-tracking, pnr-update-tracking, pnr-list-tracking-by-email)
 frontend/    React + Vite app
 ```
 
@@ -215,6 +215,23 @@ The response only includes fields relevant to the client (`trackingId`, `pnr`, `
 GET /track/{trackingId}
 ```
 
+### `pnr-list-tracking-by-email`
+
+Returns every tracking request for an email address, newest first.
+
+- Route: `GET /trackings?email=<email>`
+- Reads `pnr-tracking` with a filtered `Scan` on `email` (the `PnrEmailIndex` GSI is keyed on `<pnr>#<email>` and cannot be queried by email alone). Fine for a small table; add a GSI on `email` if it grows.
+- Response: `{ "success": true, "data": { "email", "count", "items": [...] } }`. SNS ARNs and other internals are not returned.
+- Needs `dynamodb:Scan` on the `pnr-tracking` table.
+- Lambda role: `service-role/pnr-update-tracking-role-3fckz8s0`.
+
+> **TODO (authentication, deferred):** this route is currently **unauthenticated**. Anyone who knows an
+> email address can list that person's PNRs and passenger/berth details. Planned fix: create a Cognito
+> user pool + app client, attach a JWT authorizer to `GET /trackings`, add `authorization` to the API's
+> CORS `AllowHeaders`, set Lambda env `REQUIRE_AUTH=true` (the Lambda already prefers the verified `email`
+> claim from the JWT and then ignores `?email=`), and add sign-in to the frontend. The other routes
+> (`/pnr/{pnr}`, `/track`, `/track/{trackingId}`) are also unauthenticated and not yet reviewed.
+
 ### `pnr-update-tracking`
 
 Runs periodically through an EventBridge Scheduler schedule named `pnr-tracker-update-schedule` (`rate(30 minutes)`), which invokes this Lambda directly via a dedicated execution role. This is EventBridge **Scheduler**, a separate AWS API from classic EventBridge **Rules** — worth remembering when checking whether it's still configured, since `aws events list-rules` won't show it.
@@ -238,6 +255,7 @@ The current API Gateway routes are:
 | `GET`  | `/pnr/{pnr}`          | `pnr-checker`       | Check current PNR status    |
 | `POST` | `/track`              | `pnr-track-request` | Start tracking a PNR        |
 | `GET`  | `/track/{trackingId}` | `pnr-get-tracking`  | Retrieve a tracking request |
+| `GET`  | `/trackings?email=`   | `pnr-list-tracking-by-email` | List all tracking requests for an email |
 
 ### Base URL
 
