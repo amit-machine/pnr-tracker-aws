@@ -59,7 +59,7 @@ React 19 + Vite. The UI has two tabs:
 - **Check PNR** – look up a PNR and optionally start email tracking for it.
 - **My trackings** – find your active tracking requests by **email**, **PNR** or **tracking ID**.
 
-Both tabs stay mounted (the inactive one is just hidden), so what you typed and any results survive switching tabs.
+Both tabs stay mounted (the inactive one is just hidden), so what you typed and any results survive switching tabs. The last email searched on **My trackings** is also kept in the browser's `localStorage` (one email at a time, key `pnr-tracker:last-email`), so after a reload that search is restored and run again automatically. Searching a different email replaces it.
 
 ## Structure
 
@@ -78,6 +78,7 @@ frontend/
 │   │   └── PassengerCard.jsx   one passenger row
 │   ├── services/pnrApi.js      all HTTP calls
 │   ├── utils/
+│   │   ├── lastEmail.js        remembers the last email searched (localStorage)
 │   │   ├── pnrUtils.js         eligibility, labels, IST date/time helpers
 │   │   └── validation.js       PNR / email / tracking-ID validation
 │   ├── App.jsx                 header + tabs

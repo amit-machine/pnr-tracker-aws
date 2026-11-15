@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { getTrackingRequest, listTrackings } from "../services/pnrApi";
 import {
   isValidEmail,
   isValidPnr,
   isValidTrackingId,
 } from "../utils/validation";
+import { loadLastEmail, saveLastEmail } from "../utils/lastEmail";
 import FormField from "./FormField";
 import TrackingResult from "./TrackingResult";
 
@@ -30,11 +31,47 @@ const MODES = {
 };
 
 function TrackingLookup() {
+  // The last email searched is restored (and searched again) after a reload.
+  const [savedEmail] = useState(() => {
+    const email = loadLastEmail();
+    return isValidEmail(email) ? email : "";
+  });
+
   const [mode, setMode] = useState("email");
-  const [value, setValue] = useState("");
+  const [value, setValue] = useState(savedEmail);
   const [results, setResults] = useState(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(Boolean(savedEmail));
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (!savedEmail) {
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    listTrackings({ email: savedEmail })
+      .then((data) => {
+        if (!cancelled) {
+          setResults(data.items);
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          console.error("Failed to restore last search:", err);
+          setError(err.message || "Unable to fetch tracking request.");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [savedEmail]);
 
   const config = MODES[mode];
   const trimmed = value.trim();
@@ -64,6 +101,10 @@ function TrackingLookup() {
       } else {
         const data = await listTrackings({ [mode]: trimmed });
         setResults(data.items);
+
+        if (mode === "email") {
+          saveLastEmail(trimmed);
+        }
       }
     } catch (err) {
       console.error("Failed to fetch tracking request:", err);
