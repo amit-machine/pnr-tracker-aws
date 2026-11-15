@@ -35,7 +35,13 @@ function App() {
           ))}
         </nav>
 
-        {tab === "status" ? <PnrForm /> : <TrackingLookup />}
+        {/* Both tabs stay mounted so typed values and results survive switching. */}
+        <div hidden={tab !== "status"}>
+          <PnrForm />
+        </div>
+        <div hidden={tab !== "trackings"}>
+          <TrackingLookup />
+        </div>
       </main>
     </>
   );
