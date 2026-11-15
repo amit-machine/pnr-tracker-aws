@@ -27,31 +27,27 @@ amplify.yml            Amplify build spec for the frontend (monorepo)
 - Amazon EventBridge **Scheduler** to run the update Lambda every 30 minutes
 - Railkit API as the source of PNR data
 
-```text
-                         ┌──────────────────┐
-                         │   React client   │
-                         └────────┬─────────┘
-                                  │
-     ┌───────────────┬────────────┼──────────────┬─────────────────────┐
-     │               │            │              │                     │
-GET /pnr/{pnr}  POST /track  GET /track/{id}  GET /trackings?email|pnr
-     │               │            │              │
-     ▼               ▼            ▼              ▼
- pnr-checker   pnr-track-    pnr-get-       pnr-list-tracking-
-     │          request       tracking        by-email
-     ▼           │  │            │              │
-  Railkit        │  └─> Railkit  └──────┬───────┘
-                 ▼                      ▼
-        DynamoDB + SNS              DynamoDB
+```mermaid
+flowchart TD
+    client["React client<br/>(AWS Amplify)"] --> api["API Gateway<br/>(HTTP API)"]
 
+    api -->|"GET /pnr/{pnr}"| checker["pnr-checker"]
+    api -->|"POST /track"| track["pnr-track-request"]
+    api -->|"GET /track/{id}"| get["pnr-get-tracking"]
+    api -->|"GET /trackings?email or pnr"| list["pnr-list-tracking-by-email"]
 
-EventBridge Scheduler (every 30 minutes)
-      │
-      ▼
-pnr-update-tracking ──> Railkit
-      │
-      ├──> DynamoDB
-      └──> SNS ──> recipient's email
+    checker --> railkit[("Railkit API")]
+    track --> railkit
+    track --> db[("DynamoDB<br/>pnr-tracking")]
+    track --> sns["Amazon SNS<br/>(topic per tracking)"]
+    get --> db
+    list --> db
+
+    scheduler["EventBridge Scheduler<br/>every 30 minutes"] --> update["pnr-update-tracking"]
+    update --> railkit
+    update --> db
+    update --> sns
+    sns -->|"status email"| user(["Recipient's inbox"])
 ```
 
 ---
