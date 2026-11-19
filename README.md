@@ -34,7 +34,7 @@ flowchart TD
     api -->|"GET /pnr/{pnr}"| checker["pnr-checker"]
     api -->|"POST /track"| track["pnr-track-request"]
     api -->|"GET /track/{id}"| get["pnr-get-tracking"]
-    api -->|"GET /trackings?email or pnr"| list["pnr-list-tracking-by-email"]
+    api -->|"GET /trackings?email"| list["pnr-list-tracking-by-email"]
 
     checker --> railkit[("Railkit API")]
     track --> railkit
@@ -57,9 +57,9 @@ flowchart TD
 React 19 + Vite. The UI has two tabs:
 
 - **Check PNR** – look up a PNR and optionally start email tracking for it.
-- **My trackings** – find your active tracking requests by **email**, **PNR** or **tracking ID**.
+- **My trackings** – find your active tracking requests by **email**, or look up one request by its **tracking ID**.
 
-The active tab is kept in the URL hash (`#status` / `#trackings`), so a reload stays on the same tab. Both tabs stay mounted (the inactive one is just hidden), so what you typed and any results survive switching tabs. The last email searched on **My trackings** is also kept in the browser's `localStorage` (one email at a time, key `pnr-tracker:last-email`), so after a reload that search is restored and run again automatically. Searching a different email replaces it.
+The active tab is kept in the URL hash (`#status` / `#trackings`), so a reload stays on the same tab. Both tabs stay mounted (the inactive one is just hidden), so what you typed and any results survive switching tabs. On **My trackings**, the email and tracking-ID inputs are kept separately, so switching between them never clears the email. The last email searched on **My trackings** is also kept in the browser's `localStorage` (one email at a time, key `pnr-tracker:last-email`), so after a reload that search is restored and run again automatically. Searching a different email replaces it.
 
 ## Structure
 
@@ -96,7 +96,7 @@ frontend/
 - **`TrainCard`** – the shared card shown for every train, whether it comes from a live PNR check or from a saved tracking. It shows the PNR, train name and number, a departure → arrival timeline (times, dates, stations, journey duration, all in IST), chips for class (e.g. `Sleeper (SL)`, `AC 3 Tier (3A)`), quota, distance and chart status, and the passengers with colour-coded status pills (green confirmed, amber RAC, red waiting list, grey cancelled).
 - **`PnrForm`** – validates a 10-digit PNR, calls `GET /pnr/{pnr}`, renders `PnrStatus`, and shows `TrackingForm` only if the PNR can still be tracked.
 - **`TrackingForm`** – validates an email, calls `POST /track`, and shows the tracking ID with a copy button.
-- **`TrackingLookup`** – a mode switch (Email / PNR / Tracking ID) over one input. Email and PNR search call `GET /trackings` and list **active** trackings only; Tracking ID calls `GET /track/{id}` and shows that request, including why it stopped if it did.
+- **`TrackingLookup`** – a switch between **Email** and **Tracking ID**, each with its own input and results. Email calls `GET /trackings?email=` and lists **active** trackings only; Tracking ID calls `GET /track/{id}` and shows that request, including why it stopped if it did. The last email searched is remembered (see the Frontend section).
 
 ## Shared logic (`utils/pnrUtils.js`)
 
@@ -117,7 +117,7 @@ Five Lambda functions behind one API Gateway HTTP API, in `ap-south-1`.
 | `GET`  | `/pnr/{pnr}` | `pnr-checker` (`pnr-status-checker`) | Current PNR status from Railkit |
 | `POST` | `/track` | `pnr-track-request` | Start tracking a PNR for an email |
 | `GET`  | `/track/{trackingId}` | `pnr-get-tracking` | Get one tracking request |
-| `GET`  | `/trackings?email=…` or `?pnr=…` | `pnr-list-tracking-by-email` | List **active** trackings for an email or PNR, newest first |
+| `GET`  | `/trackings?email=…` (or `?pnr=…`, which the UI no longer uses) | `pnr-list-tracking-by-email` | List **active** trackings for an email, newest first |
 | –      | (EventBridge Scheduler) | `pnr-update-tracking` | Re-check every active PNR and notify on change |
 
 Base URL: `https://wqhly6ibz1.execute-api.ap-south-1.amazonaws.com`
